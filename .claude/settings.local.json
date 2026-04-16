@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep:*)",
+      "Bash(conda run -n arabulucu python -c ':*)",
+      "Bash(docker exec arabulucuapp-backend-1 python -c ':*)",
+      "Bash(docker exec:*)",
+      "Bash(conda activate:*)",
+      "Bash(python -c \" import pandas as pd, datetime, sys path = r'C:/Users/PC/OneDrive - Istanbul Bilgi Universitesi/Belgeler/Github/arabulucuapp/backend/users/6ce0f5a2-175a-4337-affe-fb92fd73e36d/input/2c300817-86b2-4ca7-85b6-a36cf528ba4e_A_d4L5qss.xlsx' xl = pd.ExcelFile\\(path, engine='openpyxl'\\) print\\('Sekmeler:', xl.sheet_names\\) sheet = xl.sheet_names[1] if len\\(xl.sheet_names\\)>1 else xl.sheet_names[0] df = pd.read_excel\\(xl, sheet_name=sheet, header=0, dtype=object\\) row = df.iloc[0] for col in df.columns: v = row[col] print\\(f'{col}: {repr\\(v\\)} [{type\\(v\\).__name__}]'\\) \")",
+      "Bash(C:/Users/PC/miniconda3/python.exe -c ':*)",
+      "Bash(C:/Users/PC/miniconda3/envs/arabulucu/python.exe -c ':*)",
+      "Read(//c/Users/PC/miniconda3/envs//**)",
+      "Read(//mnt/c/Users/PC/miniconda3/**)",
+      "Bash(docker cp:*)",
+      "Bash(python3 -c ':*)",
+      "Bash(python -c ':*)",
+      "Bash(docker restart arabulucuapp-frontend-1:*)",
+      "Bash(docker restart:*)",
+      "Bash(sed -n '170,195p' \"C:/Users/PC/OneDrive - Istanbul Bilgi Universitesi/Belgeler/Github/arabulucuapp/frontend/src/views/DosyalarView.vue\")",
+      "Bash(sed -n '435,465p' \"C:/Users/PC/OneDrive - Istanbul Bilgi Universitesi/Belgeler/Github/arabulucuapp/frontend/src/views/DosyaDetayView.vue\")",
+      "Bash(sed -n '258,268p' \"C:/Users/PC/OneDrive - Istanbul Bilgi Universitesi/Belgeler/Github/arabulucuapp/frontend/src/views/ProfilView.vue\")",
+      "Bash(docker-compose build:*)",
+      "Bash(docker-compose up:*)"
+    ]
+  }
+}
