@@ -1,0 +1,40 @@
+/**
+ * LinkedIn Liderlik Serisi — Telegram Bot
+ *
+ * Secrets (wrangler secret put ile ekle):
+ *   npx wrangler secret put TELEGRAM_TOKEN
+ *   npx wrangler secret put TELEGRAM_CHAT_ID
+ *   npx wrangler secret put ANTHROPIC_API_KEY
+ *
+ * KV namespace oluştur:
+ *   npx wrangler kv namespace create LIDERLIK_KV
+ *   npx wrangler kv namespace create LIDERLIK_KV --preview
+ * Oluşan id'leri aşağıdaki kv_namespaces alanına yapıştır.
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "telegram-bot",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-05-16",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
+	"observability": {
+		"enabled": true
+	},
+	"upload_source_maps": true,
+	"kv_namespaces": [
+    {
+        "binding": "LIDERLIK_KV",
+        "id": "f0508ba74f2d4136828f866e6f9d02dd",
+        "preview_id": "dcd8ea7819274eec9b7125878ad7c1a2"
+    }
+],
+	"triggers": {
+		// UTC 06:00 = Türkiye (UTC+3) 09:00
+		"crons": [
+			"0 6 * * *"
+		]
+	}
+}
