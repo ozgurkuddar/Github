@@ -158,3 +158,32 @@ export async function oturumGetir(
 export async function oturumSil(kv: KVNamespace, chatId: string): Promise<void> {
 	await kv.delete(KV_KEYS.oturum(chatId));
 }
+
+const ESKI_ARSIV_LISTESI = 'arsiv:liste';
+
+/**
+ * Kerelik taşıma: eski arsiv:liste kayıtlarını taslak:liste'ye alır (durum: taslak).
+ * Tamamlanınca arsiv:liste anahtarını siler. Taşınan kayıt sayısını döner.
+ */
+export async function eskiVeriTasi(kv: KVNamespace): Promise<number> {
+	const ids = await listeOku(kv, ESKI_ARSIV_LISTESI);
+	if (ids.length === 0) {
+		if (await kv.get(ESKI_ARSIV_LISTESI)) {
+			await kv.delete(ESKI_ARSIV_LISTESI);
+		}
+		return 0;
+	}
+
+	let sayac = 0;
+	for (const id of ids) {
+		const taslak = await taslakGetir(kv, id);
+		if (!taslak) continue;
+
+		const guncel: Draft = { ...taslak, durum: 'taslak' };
+		await taslakKaydet(kv, guncel);
+		sayac++;
+	}
+
+	await kv.delete(ESKI_ARSIV_LISTESI);
+	return sayac;
+}

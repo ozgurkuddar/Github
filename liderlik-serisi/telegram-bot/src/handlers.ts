@@ -1,6 +1,7 @@
 import { aciOner, taslakRevizeEt, taslakUret } from './anthropic';
 import { TEMALAR } from './constants';
 import {
+	eskiVeriTasi,
 	gorevKaydet,
 	oturumGetir,
 	oturumKaydet,
@@ -112,6 +113,20 @@ export async function komutYayinlandi(env: BotEnv, chatId: string): Promise<void
 	for (const t of yayinlananlar) {
 		await yayinlananTaslakMesajiGonder(env, chatId, t);
 	}
+}
+
+/** /tasima — eski arsiv:liste kayıtlarını taslak:liste'ye taşır (kerelik) */
+export async function komutTasima(env: BotEnv, chatId: string): Promise<void> {
+	const sayi = await eskiVeriTasi(env.LIDERLIK_KV);
+	if (sayi === 0) {
+		await mesajGonder(env.TELEGRAM_TOKEN, chatId, 'Taşınacak eski arşiv kaydı bulunamadı.');
+		return;
+	}
+	await mesajGonder(
+		env.TELEGRAM_TOKEN,
+		chatId,
+		`✅ ${sayi} kayıt arşivden planlanmış taslaklara taşındı.`,
+	);
 }
 
 /** /arsiv — eski komut; yönlendirme mesajı */

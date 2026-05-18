@@ -12,6 +12,7 @@ import {
 	komutKomutlar,
 	komutStart,
 	komutTaslaklar,
+	komutTasima,
 	komutYayinlandi,
 	komutYeni,
 	notAlindi,
@@ -104,6 +105,9 @@ async function mesajIsle(env: BotEnv, message: TelegramMessage): Promise<void> {
 			break;
 		case '/arsiv':
 			await komutArsiv(env, chatId);
+			break;
+		case '/tasima':
+			await komutTasima(env, chatId);
 			break;
 		case '/konser':
 		case '/ucak':
