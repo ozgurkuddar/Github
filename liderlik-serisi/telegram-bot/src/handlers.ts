@@ -8,6 +8,7 @@ import {
 	oturumSil,
 	taslakArsivle,
 	taslakGetir,
+	taslakKaydet,
 	taslakSil,
 	taslakYayinlandi,
 	taslaklariListele,
@@ -187,7 +188,7 @@ ${htmlKacir(t.icerik)}`;
 	});
 }
 
-/** /taslaklar listesinde kısa önizleme — yayınlandı ve sil */
+/** /taslaklar listesinde kısa önizleme — yayınlandı, sil ve revize */
 async function planliTaslakMesajiGonder(env: BotEnv, chatId: string, t: Draft): Promise<void> {
 	const tarih = new Date(t.olusturulma).toLocaleDateString('tr-TR');
 	const onizleme =
@@ -204,6 +205,36 @@ ${htmlKacir(onizleme)}`;
 			[
 				{ text: '✅ Yayınlandı', callback_data: `yayinla:${t.id}` },
 				{ text: '🗑 Sil', callback_data: `sil:${t.id}` },
+			],
+			[{ text: '✏ Revize et', callback_data: `revizetaslak:${t.id}` }],
+		],
+	};
+
+	await mesajGonder(env.TELEGRAM_TOKEN, chatId, metin, {
+		parse_mode: 'HTML',
+		reply_markup: klavye,
+	});
+}
+
+/** Planlı taslak revize sonucu — KV'ye kaydet veya tekrar revize et */
+async function revizeTaslakSonucMesajiGonder(
+	env: BotEnv,
+	chatId: string,
+	t: Draft,
+): Promise<void> {
+	const tarih = new Date(t.olusturulma).toLocaleDateString('tr-TR');
+	const metin = `📝 <b>Revize edildi</b> · <b>${htmlKacir(t.temaEtiket)}</b> (${tarih})
+
+<b>Açı:</b> ${htmlKacir(t.aci)}
+
+<b>İçerik:</b>
+${htmlKacir(t.icerik)}`;
+
+	const klavye: TelegramInlineKeyboard = {
+		inline_keyboard: [
+			[
+				{ text: '✅ Arşivle (Güncelle)', callback_data: `taslakkaydet:${t.id}` },
+				{ text: '✏ Tekrar Revize Et', callback_data: `revizetaslak:${t.id}` },
 			],
 		],
 	};
@@ -450,6 +481,127 @@ export async function revizeBaslat(
 	);
 }
 
+/** /taslaklar — planlı taslağı revize et (KV'den oku, oturuma al) */
+export async function revizeTaslakBaslat(
+	env: BotEnv,
+	chatId: string,
+	taslakId: string,
+	callbackQueryId: string,
+): Promise<void> {
+	const oturum = await oturumGetir(env.LIDERLIK_KV, chatId);
+	let taslak = await taslakGetir(env.LIDERLIK_KV, taslakId);
+
+	if (!taslak) {
+		await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Taslak bulunamadı');
+		return;
+	}
+
+	// Oturumda daha önce revize edilmiş metin varsa onu göster
+	if (oturum?.taslakId === taslakId && oturum.guncel_taslak) {
+		taslak = taslakGuncelMetinle(taslak, oturum.guncel_taslak);
+	}
+
+	await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Revize modu');
+
+	await oturumKaydet(env.LIDERLIK_KV, chatId, {
+		adim: 'revizetaslak_bekleniyor',
+		temaId: taslak.tema,
+		temaEtiket: taslak.temaEtiket,
+		taslakId: taslak.id,
+		guncel_taslak: guncelTaslakAlani(taslak),
+	});
+
+	const tarih = new Date(taslak.olusturulma).toLocaleDateString('tr-TR');
+	const metin = `📝 <b>${htmlKacir(taslak.temaEtiket)}</b> · ${tarih}
+
+<b>Açı:</b> ${htmlKacir(taslak.aci)}
+
+<b>İçerik:</b>
+${htmlKacir(taslak.icerik)}`;
+
+	await mesajGonder(env.TELEGRAM_TOKEN, chatId, metin, { parse_mode: 'HTML' });
+	await mesajGonder(env.TELEGRAM_TOKEN, chatId, 'Ne değiştirelim? Revizyon notunu yaz:');
+}
+
+/** Planlı taslak revizyon notu — Claude ile içeriği günceller */
+async function revizeTaslakNotuAlindi(
+	env: BotEnv,
+	chatId: string,
+	revizeNotu: string,
+): Promise<void> {
+	const oturum = await oturumGetir(env.LIDERLIK_KV, chatId);
+	if (!oturum || oturum.adim !== 'revizetaslak_bekleniyor' || !oturum.taslakId) return;
+
+	const kvTaslak = await taslakGetir(env.LIDERLIK_KV, oturum.taslakId);
+	if (!kvTaslak) {
+		await oturumSil(env.LIDERLIK_KV, chatId);
+		return;
+	}
+
+	const mevcut = oturum.guncel_taslak
+		? taslakGuncelMetinle(kvTaslak, oturum.guncel_taslak)
+		: kvTaslak;
+
+	await mesajGonder(env.TELEGRAM_TOKEN, chatId, '⏳ Taslak revize ediliyor…');
+
+	try {
+		const yeniIcerik = await taslakRevizeEt(env.ANTHROPIC_API_KEY, mevcut, revizeNotu);
+		const guncelTaslak: GuncelTaslak = { aci: mevcut.aci, icerik: yeniIcerik };
+
+		await oturumKaydet(env.LIDERLIK_KV, chatId, {
+			...oturum,
+			adim: 'revizetaslak_gosterildi',
+			guncel_taslak: guncelTaslak,
+		});
+
+		const gosterim: Draft = { ...kvTaslak, icerik: yeniIcerik };
+		await revizeTaslakSonucMesajiGonder(env, chatId, gosterim);
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : 'Bilinmeyen hata';
+		await mesajGonder(
+			env.TELEGRAM_TOKEN,
+			chatId,
+			`❌ Revize başarısız: ${htmlKacir(msg)}`,
+			{ parse_mode: 'HTML' },
+		);
+	}
+}
+
+/** Arşivle (Güncelle) — oturumdaki revize içeriği KV'deki aynı id'ye yazar */
+export async function taslakKaydetGuncelle(
+	env: BotEnv,
+	chatId: string,
+	taslakId: string,
+	callbackQueryId: string,
+): Promise<void> {
+	const oturum = await oturumGetir(env.LIDERLIK_KV, chatId);
+	const taslak = await taslakGetir(env.LIDERLIK_KV, taslakId);
+
+	if (!taslak) {
+		await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Taslak bulunamadı');
+		return;
+	}
+
+	if (
+		!oturum?.guncel_taslak ||
+		oturum.taslakId !== taslakId ||
+		(oturum.adim !== 'revizetaslak_gosterildi' && oturum.adim !== 'revizetaslak_bekleniyor')
+	) {
+		await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Güncel revize bulunamadı');
+		return;
+	}
+
+	const guncel: Draft = {
+		...taslak,
+		icerik: oturum.guncel_taslak.icerik,
+	};
+	await taslakKaydet(env.LIDERLIK_KV, guncel);
+	await oturumSil(env.LIDERLIK_KV, chatId);
+
+	await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Kaydedildi');
+	await mesajGonder(env.TELEGRAM_TOKEN, chatId, '✅ Taslak güncellendi');
+}
+
 /** Revize notu alındı — Claude ile yeniden yaz, oturumdaki guncel_taslak güncellenir */
 export async function revizeNotuAlindi(
 	env: BotEnv,
@@ -598,6 +750,9 @@ export async function oturumMesajiIsle(env: BotEnv, chatId: string, metin: strin
 			return true;
 		case 'revize_bekleniyor':
 			await revizeNotuAlindi(env, chatId, metin);
+			return true;
+		case 'revizetaslak_bekleniyor':
+			await revizeTaslakNotuAlindi(env, chatId, metin);
 			return true;
 		default:
 			return false;

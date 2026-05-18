@@ -18,7 +18,9 @@ import {
 	notAlindi,
 	oturumMesajiIsle,
 	revizeBaslat,
+	revizeTaslakBaslat,
 	silTaslak,
+	taslakKaydetGuncelle,
 	temaSecildi,
 	yayinlaTaslak,
 	type BotEnv,
@@ -154,6 +156,18 @@ async function callbackIsle(env: BotEnv, query: TelegramCallbackQuery): Promise<
 		if (!Number.isNaN(indeks)) {
 			await aciSecildi(env, chatIdStr, indeks, query.id);
 		}
+		return;
+	}
+
+	if (data.startsWith('revizetaslak:')) {
+		const taslakId = data.slice('revizetaslak:'.length);
+		await revizeTaslakBaslat(env, chatIdStr, taslakId, query.id);
+		return;
+	}
+
+	if (data.startsWith('taslakkaydet:')) {
+		const taslakId = data.slice('taslakkaydet:'.length);
+		await taslakKaydetGuncelle(env, chatIdStr, taslakId, query.id);
 		return;
 	}
 

@@ -30,13 +30,15 @@ export interface ScheduledTask {
 	olusturulma: string;
 }
 
-/** /yeni akışındaki oturum adımları */
+/** /yeni ve /taslaklar revize akışındaki oturum adımları */
 export type OturumAdim =
 	| 'tema_secildi'
 	| 'not_bekleniyor'
 	| 'aci_bekleniyor'
 	| 'taslak_gosterildi'
-	| 'revize_bekleniyor';
+	| 'revize_bekleniyor'
+	| 'revizetaslak_bekleniyor'
+	| 'revizetaslak_gosterildi';
 
 /** /yeni akışı için kullanıcı oturum durumu (KV) */
 export interface UserSession {
