@@ -33,6 +33,10 @@ export interface BotEnv {
 const BAGLAM_SORUSU =
 	'Bu tema için bağlam veya notun var mı?\n(Örn: güncel olay, kişisel gözlem, paylaşmak istediğin bir fikir)\n\nBoş geçmek için /atla yazabilirsin.';
 
+/** Oturum KV'de yoksa veya süresi dolmuşsa gösterilir */
+const OTURUM_SURESI_DOLDU_METNI =
+	'⏱ Oturum süresi doldu. /yeni yazarak yeniden başlayabilirsin.';
+
 const KOMUT_LISTESI_METNI = `<b>Liderlik Serisi Bot — Komutlar</b>
 
 /yeni — Yeni LinkedIn postu oluştur
@@ -254,11 +258,51 @@ function guncelTaslakAlani(taslak: Draft): GuncelTaslak {
 	return { aci: taslak.aci, icerik: taslak.icerik };
 }
 
-/** /yeni akışında tam taslak — revize ve arşivle butonları */
+/** Oturum yoksa veya geçersizse kullanıcıya bilgi verir */
+async function oturumSuresiDolduIsle(
+	env: BotEnv,
+	chatId: string,
+	callbackQueryId?: string,
+): Promise<void> {
+	if (callbackQueryId) {
+		await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Oturum sona erdi');
+	}
+	await mesajGonder(env.TELEGRAM_TOKEN, chatId, OTURUM_SURESI_DOLDU_METNI);
+}
+
+/** 3 açı butonu + altta "Farklı açılar öner" satırı */
+function acilarKlavyeOlustur(acilar: string[]): TelegramInlineKeyboard {
+	const satirlar = acilar.map((aci, i) => [
+		{
+			text: aciButonMetni(aci, i + 1),
+			callback_data: `aci:${i}`,
+		},
+	]);
+	satirlar.push([{ text: '🔄 Farklı açılar öner', callback_data: 'yeniaci' }]);
+	return { inline_keyboard: satirlar };
+}
+
+/** Oturumdaki acilar dizisini inline klavye ile gösterir (KV'den yeniden üretmez) */
+async function acilarOnerisiGonder(
+	env: BotEnv,
+	chatId: string,
+	temaEtiket: string,
+	acilar: string[],
+): Promise<void> {
+	await mesajGonder(
+		env.TELEGRAM_TOKEN,
+		chatId,
+		`🎯 <b>${htmlKacir(temaEtiket)}</b> için 3 açı önerisi:\n\nAşağıdan birini seç:`,
+		{ parse_mode: 'HTML', reply_markup: acilarKlavyeOlustur(acilar) },
+	);
+}
+
+/** /yeni akışında tam taslak — revize, arşivle; isteğe bağlı açılara dön */
 async function taslakMesajiGonder(
 	env: BotEnv,
 	chatId: string,
 	t: Draft,
+	secenekler?: { acilaraDon?: boolean },
 ): Promise<void> {
 	const tarih = new Date(t.olusturulma).toLocaleDateString('tr-TR');
 	const metin = `📝 <b>Taslak</b> · <b>${htmlKacir(t.temaEtiket)}</b> (${tarih})
@@ -268,18 +312,19 @@ async function taslakMesajiGonder(
 <b>İçerik:</b>
 ${htmlKacir(t.icerik)}`;
 
-	const klavye: TelegramInlineKeyboard = {
-		inline_keyboard: [
-			[
-				{ text: '✏ Revize et', callback_data: `revize:${t.id}` },
-				{ text: '✅ Arşivle', callback_data: `arsiv:${t.id}` },
-			],
+	const satirlar: { text: string; callback_data: string }[][] = [
+		[
+			{ text: '✏ Revize et', callback_data: `revize:${t.id}` },
+			{ text: '✅ Arşivle', callback_data: `arsiv:${t.id}` },
 		],
-	};
+	];
+	if (secenekler?.acilaraDon) {
+		satirlar.push([{ text: '⬅ Açılara dön', callback_data: 'acilarageri' }]);
+	}
 
 	await mesajGonder(env.TELEGRAM_TOKEN, chatId, metin, {
 		parse_mode: 'HTML',
-		reply_markup: klavye,
+		reply_markup: { inline_keyboard: satirlar },
 	});
 }
 
@@ -512,6 +557,7 @@ export async function notAlindi(env: BotEnv, chatId: string, metin: string): Pro
 		const oncekiKonular = await oncekiKonulariGetir(env.LIDERLIK_KV);
 		const acilar = await aciOner(env.ANTHROPIC_API_KEY, tema, baglam, oncekiKonular);
 
+		// Üretilen 3 açı oturumda saklanır; acilarageri yeniden Claude çağırmadan bunları kullanır
 		const guncelOturum: UserSession = {
 			...oturum,
 			adim: 'aci_bekleniyor',
@@ -520,21 +566,7 @@ export async function notAlindi(env: BotEnv, chatId: string, metin: string): Pro
 		};
 		await oturumKaydet(env.LIDERLIK_KV, chatId, guncelOturum);
 
-		const klavye: TelegramInlineKeyboard = {
-			inline_keyboard: acilar.map((aci, i) => [
-				{
-					text: aciButonMetni(aci, i + 1),
-					callback_data: `aci:${i}`,
-				},
-			]),
-		};
-
-		await mesajGonder(
-			env.TELEGRAM_TOKEN,
-			chatId,
-			`🎯 <b>${htmlKacir(tema.etiket)}</b> için 3 açı önerisi:\n\nAşağıdan birini seç:`,
-			{ parse_mode: 'HTML', reply_markup: klavye },
-		);
+		await acilarOnerisiGonder(env, chatId, tema.etiket, acilar);
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : 'Bilinmeyen hata';
 		await oturumSil(env.LIDERLIK_KV, chatId);
@@ -555,8 +587,8 @@ export async function aciSecildi(
 	callbackQueryId: string,
 ): Promise<void> {
 	const oturum = await oturumGetir(env.LIDERLIK_KV, chatId);
-	if (!oturum || oturum.adim !== 'aci_bekleniyor' || !oturum.acilar) {
-		await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Oturum süresi doldu; /yeni ile başla');
+	if (!oturum || oturum.adim !== 'aci_bekleniyor' || !oturum.acilar?.length) {
+		await oturumSuresiDolduIsle(env, chatId, callbackQueryId);
 		return;
 	}
 
@@ -609,7 +641,7 @@ export async function aciSecildi(
 			guncel_taslak: guncelTaslak,
 		});
 
-		await taslakMesajiGonder(env, chatId, taslak);
+		await taslakMesajiGonder(env, chatId, taslak, { acilaraDon: true });
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : 'Bilinmeyen hata';
 		await oturumSil(env.LIDERLIK_KV, chatId);
@@ -617,6 +649,91 @@ export async function aciSecildi(
 			env.TELEGRAM_TOKEN,
 			chatId,
 			`❌ Taslak oluşturulamadı: ${htmlKacir(msg)}`,
+			{ parse_mode: 'HTML' },
+		);
+	}
+}
+
+/** Taslaktan önceki 3 açıya dön — oturumdaki acilar dizisini tekrar gösterir */
+export async function acilaraGeri(
+	env: BotEnv,
+	chatId: string,
+	callbackQueryId: string,
+): Promise<void> {
+	const oturum = await oturumGetir(env.LIDERLIK_KV, chatId);
+	if (!oturum?.acilar?.length) {
+		await oturumSuresiDolduIsle(env, chatId, callbackQueryId);
+		return;
+	}
+
+	if (oturum.adim !== 'aci_bekleniyor' && oturum.adim !== 'taslak_gosterildi') {
+		await oturumSuresiDolduIsle(env, chatId, callbackQueryId);
+		return;
+	}
+
+	await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Açılar');
+
+	await oturumKaydet(env.LIDERLIK_KV, chatId, {
+		...oturum,
+		adim: 'aci_bekleniyor',
+	});
+
+	await acilarOnerisiGonder(env, chatId, oturum.temaEtiket, oturum.acilar);
+}
+
+/** Claude ile yeni 3 açı üretir; oturumdaki önceki açıları prompt'a ekler */
+export async function yeniAciOner(
+	env: BotEnv,
+	chatId: string,
+	callbackQueryId: string,
+): Promise<void> {
+	const oturum = await oturumGetir(env.LIDERLIK_KV, chatId);
+	if (!oturum || oturum.adim !== 'aci_bekleniyor' || !oturum.acilar?.length) {
+		await oturumSuresiDolduIsle(env, chatId, callbackQueryId);
+		return;
+	}
+
+	const tema = TEMALAR.find((t) => t.id === oturum.temaId);
+	if (!tema) {
+		await oturumSuresiDolduIsle(env, chatId, callbackQueryId);
+		return;
+	}
+
+	await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Yeni açılar hazırlanıyor');
+
+	await mesajGonder(
+		env.TELEGRAM_TOKEN,
+		chatId,
+		`⏳ <b>${htmlKacir(tema.etiket)}</b> için yeni 3 açı hazırlanıyor…`,
+		{ parse_mode: 'HTML' },
+	);
+
+	try {
+		const oncekiKonular = await oncekiKonulariGetir(env.LIDERLIK_KV);
+		// Bu oturumda gösterilmiş açıları tekrar etmemesi için modele ver
+		const oturumdakiAcilar = oturum.acilar.map(
+			(a, i) => `Bu oturumda daha önce önerilen açı ${i + 1}: ${a}`,
+		);
+		const acilar = await aciOner(
+			env.ANTHROPIC_API_KEY,
+			tema,
+			oturum.baglam ?? '',
+			[...oncekiKonular, ...oturumdakiAcilar],
+		);
+
+		await oturumKaydet(env.LIDERLIK_KV, chatId, {
+			...oturum,
+			adim: 'aci_bekleniyor',
+			acilar,
+		});
+
+		await acilarOnerisiGonder(env, chatId, tema.etiket, acilar);
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : 'Bilinmeyen hata';
+		await mesajGonder(
+			env.TELEGRAM_TOKEN,
+			chatId,
+			`❌ Yeni açı önerileri oluşturulamadı: ${htmlKacir(msg)}`,
 			{ parse_mode: 'HTML' },
 		);
 	}

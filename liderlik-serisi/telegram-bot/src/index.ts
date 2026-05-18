@@ -6,6 +6,7 @@
 import { zamanlanmisGorevCalistir } from './cron';
 import {
 	aciSecildi,
+	acilaraGeri,
 	arsivleTaslak,
 	botKomutMenusunuGuncelle,
 	komutArsiv,
@@ -25,6 +26,7 @@ import {
 	taslakKaydetGuncelle,
 	temaSecildi,
 	yayinlaTaslak,
+	yeniAciOner,
 	type BotEnv,
 } from './handlers';
 import { oturumGetir } from './kv-storage';
@@ -153,6 +155,16 @@ async function callbackIsle(env: BotEnv, query: TelegramCallbackQuery): Promise<
 	if (data.startsWith('tema:')) {
 		const temaId = data.slice('tema:'.length);
 		await temaSecildi(env, chatIdStr, temaId, query.id);
+		return;
+	}
+
+	if (data === 'acilarageri') {
+		await acilaraGeri(env, chatIdStr, query.id);
+		return;
+	}
+
+	if (data === 'yeniaci') {
+		await yeniAciOner(env, chatIdStr, query.id);
 		return;
 	}
 

@@ -149,14 +149,17 @@ export async function bekleyenGorevler(kv: KVNamespace): Promise<ScheduledTask[]
 	return sonuc;
 }
 
+/** /yeni akışı oturum süresi — 24 saat (saniye) */
+const OTURUM_TTL_SANIYE = 24 * 60 * 60;
+
 export async function oturumKaydet(
 	kv: KVNamespace,
 	chatId: string,
 	oturum: UserSession,
 ): Promise<void> {
-	// Çok adımlı akış için 2 saat TTL
+	// Çok adımlı akış; acilar ve diğer alanlar bu süre boyunca KV'de kalır
 	await kv.put(KV_KEYS.oturum(chatId), JSON.stringify(oturum), {
-		expirationTtl: 7200,
+		expirationTtl: OTURUM_TTL_SANIYE,
 	});
 }
 
