@@ -71,6 +71,20 @@ export async function taslaklariListele(
 	return taslaklar;
 }
 
+/** /istatistik için — listedeki tüm taslakları limit olmadan getirir */
+export async function tumTaslaklariListele(
+	kv: KVNamespace,
+	durum: DraftStatus,
+): Promise<Draft[]> {
+	const ids = await listeOku(kv, listeAnahtari(durum));
+	const taslaklar: Draft[] = [];
+	for (const id of ids) {
+		const t = await taslakGetir(kv, id);
+		if (t && t.durum === durum) taslaklar.push(t);
+	}
+	return taslaklar;
+}
+
 /**
  * Arşivle — planlanmış listeye (taslak:liste) kaydeder.
  * İçerik çağırandan gelir (oturumdaki guncel_taslak ile birleştirilmiş hali).

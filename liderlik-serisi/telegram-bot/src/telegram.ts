@@ -66,6 +66,7 @@ export async function komutMenuGuncelle(token: string): Promise<void> {
 		{ command: 'yeni', description: 'Yeni LinkedIn postu oluştur' },
 		{ command: 'taslaklar', description: 'Planlanmış postları göster' },
 		{ command: 'yayinlandi', description: 'Yayınlanan postları göster' },
+		{ command: 'istatistik', description: 'Paylaşım istatistiklerini göster' },
 		{ command: 'komutlar', description: 'Tüm komutları listele' },
 		{ command: 'konser', description: 'Konser takibi (yakında)' },
 		{ command: 'ucak', description: 'Uçak bileti takibi (yakında)' },

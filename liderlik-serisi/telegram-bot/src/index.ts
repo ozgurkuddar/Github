@@ -9,6 +9,7 @@ import {
 	arsivleTaslak,
 	botKomutMenusunuGuncelle,
 	komutArsiv,
+	komutIstatistik,
 	komutKomutlar,
 	komutStart,
 	komutTaslaklar,
@@ -20,6 +21,7 @@ import {
 	revizeBaslat,
 	revizeTaslakBaslat,
 	silTaslak,
+	tamMetinGoster,
 	taslakKaydetGuncelle,
 	temaSecildi,
 	yayinlaTaslak,
@@ -105,6 +107,9 @@ async function mesajIsle(env: BotEnv, message: TelegramMessage): Promise<void> {
 		case '/yayinlandi':
 			await komutYayinlandi(env, chatId);
 			break;
+		case '/istatistik':
+			await komutIstatistik(env, chatId);
+			break;
 		case '/arsiv':
 			await komutArsiv(env, chatId);
 			break;
@@ -186,6 +191,12 @@ async function callbackIsle(env: BotEnv, query: TelegramCallbackQuery): Promise<
 	if (data.startsWith('yayinla:')) {
 		const taslakId = data.slice('yayinla:'.length);
 		await yayinlaTaslak(env, chatIdStr, taslakId, query.id);
+		return;
+	}
+
+	if (data.startsWith('tammetin:')) {
+		const taslakId = data.slice('tammetin:'.length);
+		await tamMetinGoster(env, chatIdStr, taslakId, query.id);
 		return;
 	}
 

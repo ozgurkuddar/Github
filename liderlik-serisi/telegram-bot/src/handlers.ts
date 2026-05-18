@@ -12,6 +12,7 @@ import {
 	taslakSil,
 	taslakYayinlandi,
 	taslaklariListele,
+	tumTaslaklariListele,
 } from './kv-storage';
 import {
 	callbackYanitla,
@@ -37,6 +38,7 @@ const KOMUT_LISTESI_METNI = `<b>Liderlik Serisi Bot — Komutlar</b>
 /yeni — Yeni LinkedIn postu oluştur
 /taslaklar — Planlanmış/bekleyen postları göster
 /yayinlandi — Yayınlanan postları göster
+/istatistik — Paylaşım istatistiklerini göster
 /komutlar — Bu listeyi göster
 /konser — Konser takibi (yakında)
 /ucak — Uçak bileti takibi (yakında)`;
@@ -116,6 +118,99 @@ export async function komutYayinlandi(env: BotEnv, chatId: string): Promise<void
 	}
 }
 
+/** /istatistik — KV'deki taslak ve yayın verilerinden özet rapor üretir */
+export async function komutIstatistik(env: BotEnv, chatId: string): Promise<void> {
+	const metin = await istatistikMetniOlustur(env.LIDERLIK_KV);
+	await mesajGonder(env.TELEGRAM_TOKEN, chatId, metin, { parse_mode: 'HTML' });
+}
+
+/** Yayınlanan postlardan tema sayıları, tarih aralığı ve en popüler temayı hesaplar */
+async function istatistikMetniOlustur(kv: KVNamespace): Promise<string> {
+	const [planliTaslaklar, yayinlananlar] = await Promise.all([
+		tumTaslaklariListele(kv, 'taslak'),
+		tumTaslaklariListele(kv, 'yayinlandi'),
+	]);
+
+	// Tema id → paylaşım sayısı (yayınlananlar)
+	const temaSayilari = new Map<string, number>();
+	for (const t of yayinlananlar) {
+		temaSayilari.set(t.tema, (temaSayilari.get(t.tema) ?? 0) + 1);
+	}
+
+	// Bilinen temalar + KV'de kalan eski/bilinmeyen tema id'leri
+	const dagilimSatirlari: { etiket: string; sayi: number }[] = [];
+	const islenenIdler = new Set<string>();
+	for (const tema of TEMALAR) {
+		const sayi = temaSayilari.get(tema.id) ?? 0;
+		dagilimSatirlari.push({ etiket: tema.etiket, sayi });
+		islenenIdler.add(tema.id);
+	}
+	for (const [temaId, sayi] of temaSayilari) {
+		if (islenenIdler.has(temaId)) continue;
+		const ornek = yayinlananlar.find((t) => t.tema === temaId);
+		dagilimSatirlari.push({ etiket: ornek?.temaEtiket ?? temaId, sayi });
+	}
+	dagilimSatirlari.sort((a, b) => b.sayi - a.sayi);
+
+	const enYuksek = dagilimSatirlari.length > 0 ? dagilimSatirlari[0].sayi : 0;
+	const enCokTemalar =
+		enYuksek > 0
+			? dagilimSatirlari.filter((d) => d.sayi === enYuksek).map((d) => d.etiket)
+			: [];
+
+	// yayinTarihi yoksa olusturulma kullanılır (eski kayıtlar)
+	let ilkYayin: Date | null = null;
+	let sonYayin: Date | null = null;
+	for (const t of yayinlananlar) {
+		const tarih = new Date(t.yayinTarihi ?? t.olusturulma);
+		if (!ilkYayin || tarih < ilkYayin) ilkYayin = tarih;
+		if (!sonYayin || tarih > sonYayin) sonYayin = tarih;
+	}
+
+	const tarihFormatla = (d: Date) =>
+		d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+
+	const dagilimBlok =
+		yayinlananlar.length === 0
+			? 'Henüz yayınlanmış post yok.'
+			: dagilimSatirlari
+					.map((d) => {
+						const cubuk = temaCubukOlustur(d.sayi, enYuksek);
+						return `  ${cubuk} <b>${htmlKacir(d.etiket)}</b> · ${d.sayi}`;
+					})
+					.join('\n');
+
+	const enCokMetin =
+		enCokTemalar.length === 0
+			? 'Henüz paylaşım yok'
+			: enCokTemalar.length === 1
+				? `${htmlKacir(enCokTemalar[0])} (${enYuksek} paylaşım)`
+				: `${enCokTemalar.map((e) => htmlKacir(e)).join(', ')} (${enYuksek}'er paylaşım)`;
+
+	const ilkTarihMetin = ilkYayin ? tarihFormatla(ilkYayin) : '—';
+	const sonTarihMetin = sonYayin ? tarihFormatla(sonYayin) : '—';
+
+	return `📊 <b>Paylaşım İstatistikleri</b>
+
+📝 <b>Planlanmış taslak:</b> ${planliTaslaklar.length}
+✅ <b>Yayınlanan post:</b> ${yayinlananlar.length}
+
+📂 <b>Temaya göre dağılım</b>
+${dagilimBlok}
+
+🏆 <b>En çok kullanılan tema:</b> ${enCokMetin}
+
+📅 <b>İlk paylaşım:</b> ${ilkTarihMetin}
+🕐 <b>Son paylaşım:</b> ${sonTarihMetin}`;
+}
+
+/** Yayın sayısına göre görsel mini çubuk (en fazla 8 blok) */
+function temaCubukOlustur(sayi: number, maksimum: number): string {
+	if (sayi === 0 || maksimum === 0) return '▫️';
+	const blok = Math.max(1, Math.round((sayi / maksimum) * 8));
+	return '🟩'.repeat(blok);
+}
+
 /** /tasima — eski arsiv:liste kayıtlarını taslak:liste'ye taşır (kerelik) */
 export async function komutTasima(env: BotEnv, chatId: string): Promise<void> {
 	const sayi = await eskiVeriTasi(env.LIDERLIK_KV);
@@ -188,11 +283,93 @@ ${htmlKacir(t.icerik)}`;
 	});
 }
 
-/** /taslaklar listesinde kısa önizleme — yayınlandı, sil ve revize */
+/** Liste görünümü için içeriğin ilk N karakterini döndürür */
+function icerikOnizleme(icerik: string, uzunluk = 100): string {
+	return icerik.length > uzunluk ? `${icerik.slice(0, uzunluk)}…` : icerik;
+}
+
+/** Tam metin ekranındaki inline butonlar — duruma göre */
+function tamMetinKlavyeOlustur(t: Draft): TelegramInlineKeyboard {
+	if (t.durum === 'taslak') {
+		return {
+			inline_keyboard: [
+				[
+					{ text: '✅ Yayınlandı', callback_data: `yayinla:${t.id}` },
+					{ text: '✏ Revize et', callback_data: `revizetaslak:${t.id}` },
+				],
+				[{ text: '🗑 Sil', callback_data: `sil:${t.id}` }],
+			],
+		};
+	}
+	return {
+		inline_keyboard: [[{ text: '🗑 Sil', callback_data: `sil:${t.id}` }]],
+	};
+}
+
+/** Tam metin mesajının üst bilgi satırları (tema, tarih, açı) */
+function tamMetinBaslikOlustur(t: Draft): string {
+	const tarih =
+		t.durum === 'yayinlandi' && t.yayinTarihi
+			? new Date(t.yayinTarihi).toLocaleDateString('tr-TR')
+			: new Date(t.olusturulma).toLocaleDateString('tr-TR');
+	const durumEtiketi = t.durum === 'yayinlandi' ? '✅ Yayınlandı' : '📝 Taslak';
+	return `${durumEtiketi} · <b>${htmlKacir(t.temaEtiket)}</b> · ${tarih}
+
+<b>Açı:</b> ${htmlKacir(t.aci)}`;
+}
+
+/** tammetin:ID — KV'den tam içeriği gösterir; 4000+ karakterde ikiye böler */
+export async function tamMetinGoster(
+	env: BotEnv,
+	chatId: string,
+	taslakId: string,
+	callbackQueryId: string,
+): Promise<void> {
+	const taslak = await taslakGetir(env.LIDERLIK_KV, taslakId);
+	if (!taslak) {
+		await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Taslak bulunamadı');
+		return;
+	}
+
+	await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Tam metin');
+
+	const klavye = tamMetinKlavyeOlustur(taslak);
+	const baslik = tamMetinBaslikOlustur(taslak);
+	const ICERIK_PARCA_LIMIT = 4000;
+
+	if (taslak.icerik.length <= ICERIK_PARCA_LIMIT) {
+		const metin = `${baslik}
+
+<b>İçerik:</b>
+${htmlKacir(taslak.icerik)}`;
+		await mesajGonder(env.TELEGRAM_TOKEN, chatId, metin, {
+			parse_mode: 'HTML',
+			reply_markup: klavye,
+		});
+		return;
+	}
+
+	// Telegram mesaj sınırına takılmamak için uzun içeriği iki parçada gönder
+	const parca1 = taslak.icerik.slice(0, ICERIK_PARCA_LIMIT);
+	const parca2 = taslak.icerik.slice(ICERIK_PARCA_LIMIT);
+	const metin1 = `${baslik}
+
+<b>İçerik (1/2):</b>
+${htmlKacir(parca1)}`;
+	const metin2 = `<b>İçerik (2/2):</b>
+${htmlKacir(parca2)}`;
+
+	await mesajGonder(env.TELEGRAM_TOKEN, chatId, metin1, { parse_mode: 'HTML' });
+	await mesajGonder(env.TELEGRAM_TOKEN, chatId, metin2, {
+		parse_mode: 'HTML',
+		reply_markup: klavye,
+	});
+}
+
+/** /taslaklar listesinde kısa önizleme — tema, tarih, açı ve ilk 100 karakter */
 async function planliTaslakMesajiGonder(env: BotEnv, chatId: string, t: Draft): Promise<void> {
 	const tarih = new Date(t.olusturulma).toLocaleDateString('tr-TR');
-	const onizleme =
-		t.icerik.length > 200 ? `${t.icerik.slice(0, 200)}…` : t.icerik;
+	const onizleme = icerikOnizleme(t.icerik);
 
 	const metin = `📝 <b>${htmlKacir(t.temaEtiket)}</b> · ${tarih}
 
@@ -206,7 +383,10 @@ ${htmlKacir(onizleme)}`;
 				{ text: '✅ Yayınlandı', callback_data: `yayinla:${t.id}` },
 				{ text: '🗑 Sil', callback_data: `sil:${t.id}` },
 			],
-			[{ text: '✏ Revize et', callback_data: `revizetaslak:${t.id}` }],
+			[
+				{ text: '✏ Revize et', callback_data: `revizetaslak:${t.id}` },
+				{ text: '📄 Tam Metni Gör', callback_data: `tammetin:${t.id}` },
+			],
 		],
 	};
 
@@ -245,18 +425,26 @@ ${htmlKacir(t.icerik)}`;
 	});
 }
 
-/** /yayinlandi listesinde — yalnızca sil */
+/** /yayinlandi listesinde — tema, tarih, açı, ilk 100 karakter ve sil */
 async function yayinlananTaslakMesajiGonder(env: BotEnv, chatId: string, t: Draft): Promise<void> {
 	const tarih = t.yayinTarihi
 		? new Date(t.yayinTarihi).toLocaleDateString('tr-TR')
 		: new Date(t.olusturulma).toLocaleDateString('tr-TR');
+	const onizleme = icerikOnizleme(t.icerik);
 
 	const metin = `✅ <b>${htmlKacir(t.temaEtiket)}</b> · Yayın: ${tarih}
 
-<b>Açı:</b> ${htmlKacir(t.aci)}`;
+<b>Açı:</b> ${htmlKacir(t.aci)}
+
+${htmlKacir(onizleme)}`;
 
 	const klavye: TelegramInlineKeyboard = {
-		inline_keyboard: [[{ text: '🗑 Sil', callback_data: `sil:${t.id}` }]],
+		inline_keyboard: [
+			[
+				{ text: '🗑 Sil', callback_data: `sil:${t.id}` },
+				{ text: '📄 Tam Metni Gör', callback_data: `tammetin:${t.id}` },
+			],
+		],
 	};
 
 	await mesajGonder(env.TELEGRAM_TOKEN, chatId, metin, {
