@@ -3,7 +3,7 @@ import type { Tema } from './types';
 /** KV anahtar önekleri */
 export const KV_KEYS = {
 	TASLAK_LISTESI: 'taslak:liste',
-	ARSIV_LISTESI: 'arsiv:liste',
+	YAYINLANDI_LISTESI: 'yayinlandi:liste',
 	GOREV_LISTESI: 'gorev:liste',
 	taslak: (id: string) => `taslak:${id}`,
 	gorev: (id: string) => `gorev:${id}`,

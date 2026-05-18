@@ -60,6 +60,23 @@ export async function callbackYanitla(
 	});
 }
 
+/** Telegram yerleşik komut menüsü (setMyCommands) */
+export async function komutMenuGuncelle(token: string): Promise<void> {
+	const komutlar = [
+		{ command: 'yeni', description: 'Yeni LinkedIn postu oluştur' },
+		{ command: 'taslaklar', description: 'Planlanmış postları göster' },
+		{ command: 'yayinlandi', description: 'Yayınlanan postları göster' },
+		{ command: 'komutlar', description: 'Tüm komutları listele' },
+		{ command: 'konser', description: 'Konser takibi (yakında)' },
+		{ command: 'ucak', description: 'Uçak bileti takibi (yakında)' },
+	];
+	const res = await telegramFetch(token, 'setMyCommands', { commands: komutlar });
+	if (!res.ok) {
+		const err = await res.text();
+		console.error('Telegram setMyCommands hatası:', err);
+	}
+}
+
 function metinParcala(metin: string, max: number): string[] {
 	if (metin.length <= max) return [metin];
 	const parcalar: string[] = [];

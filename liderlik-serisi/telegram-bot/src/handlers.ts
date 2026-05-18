@@ -7,11 +7,18 @@ import {
 	oturumSil,
 	taslakArsivle,
 	taslakGetir,
-	taslakKaydet,
+	taslakSil,
+	taslakYayinlandi,
 	taslaklariListele,
 } from './kv-storage';
-import { callbackYanitla, htmlKacir, mesajGonder, type TelegramInlineKeyboard } from './telegram';
-import type { Draft, ScheduledTask, UserSession } from './types';
+import {
+	callbackYanitla,
+	htmlKacir,
+	komutMenuGuncelle,
+	mesajGonder,
+	type TelegramInlineKeyboard,
+} from './telegram';
+import type { Draft, GuncelTaslak, ScheduledTask, UserSession } from './types';
 
 export interface BotEnv {
 	LIDERLIK_KV: KVNamespace;
@@ -23,8 +30,23 @@ export interface BotEnv {
 const BAGLAM_SORUSU =
 	'Bu tema için bağlam veya notun var mı?\n(Örn: güncel olay, kişisel gözlem, paylaşmak istediğin bir fikir)\n\nBoş geçmek için /atla yazabilirsin.';
 
-/** /start ve yardım metni */
-export async function komutYardim(env: BotEnv, chatId: string): Promise<void> {
+const KOMUT_LISTESI_METNI = `<b>Liderlik Serisi Bot — Komutlar</b>
+
+/yeni — Yeni LinkedIn postu oluştur
+/taslaklar — Planlanmış/bekleyen postları göster
+/yayinlandi — Yayınlanan postları göster
+/komutlar — Bu listeyi göster
+/konser — Konser takibi (yakında)
+/ucak — Uçak bileti takibi (yakında)`;
+
+/** Worker deploy veya /start sonrası Telegram komut menüsünü günceller */
+export async function botKomutMenusunuGuncelle(env: BotEnv): Promise<void> {
+	await komutMenuGuncelle(env.TELEGRAM_TOKEN);
+}
+
+/** /start — hoş geldin ve komut menüsü */
+export async function komutStart(env: BotEnv, chatId: string): Promise<void> {
+	await botKomutMenusunuGuncelle(env);
 	await mesajGonder(
 		env.TELEGRAM_TOKEN,
 		chatId,
@@ -32,13 +54,14 @@ export async function komutYardim(env: BotEnv, chatId: string): Promise<void> {
 
 LinkedIn liderlik serisi postlarını planlamana yardımcı olur.
 
-<b>Komutlar</b>
-/yeni — Yeni post: tema seç, not ekle, açı seç, taslak üret
-/taslaklar — Aktif taslakları listele
-/arsiv — Arşivlenmiş postları listele
-/yardim — Bu mesaj`,
+${KOMUT_LISTESI_METNI}`,
 		{ parse_mode: 'HTML' },
 	);
+}
+
+/** /komutlar — tüm komutları listele */
+export async function komutKomutlar(env: BotEnv, chatId: string): Promise<void> {
+	await mesajGonder(env.TELEGRAM_TOKEN, chatId, KOMUT_LISTESI_METNI, { parse_mode: 'HTML' });
 }
 
 /** /yeni — tema seçim klavyesi */
@@ -63,67 +86,132 @@ export async function komutYeni(env: BotEnv, chatId: string): Promise<void> {
 	);
 }
 
-/** /taslaklar */
+/** /taslaklar — planlanmış/bekleyen postlar */
 export async function komutTaslaklar(env: BotEnv, chatId: string): Promise<void> {
 	const taslaklar = await taslaklariListele(env.LIDERLIK_KV, 'taslak', 8);
 	if (taslaklar.length === 0) {
 		await mesajGonder(
 			env.TELEGRAM_TOKEN,
 			chatId,
-			'Henüz aktif taslak yok. /yeni ile başlayabilirsin.',
+			'Henüz planlanmış taslak yok. /yeni ile başlayabilirsin.',
 		);
 		return;
 	}
 	for (const t of taslaklar) {
-		await taslakMesajiGonder(env, chatId, t, true);
+		await planliTaslakMesajiGonder(env, chatId, t);
 	}
 }
 
-/** /arsiv */
-export async function komutArsiv(env: BotEnv, chatId: string): Promise<void> {
-	const arsiv = await taslaklariListele(env.LIDERLIK_KV, 'arsiv', 8);
-	if (arsiv.length === 0) {
-		await mesajGonder(env.TELEGRAM_TOKEN, chatId, 'Arşiv boş.');
+/** /yayinlandi — paylaşılmış postlar */
+export async function komutYayinlandi(env: BotEnv, chatId: string): Promise<void> {
+	const yayinlananlar = await taslaklariListele(env.LIDERLIK_KV, 'yayinlandi', 8);
+	if (yayinlananlar.length === 0) {
+		await mesajGonder(env.TELEGRAM_TOKEN, chatId, 'Henüz yayınlanmış post yok.');
 		return;
 	}
-	for (const t of arsiv) {
-		await taslakMesajiGonder(env, chatId, t, false);
+	for (const t of yayinlananlar) {
+		await yayinlananTaslakMesajiGonder(env, chatId, t);
 	}
 }
 
-/** Arşivdeki önceki konuları Claude'a tekrar önlemek için toplar */
-async function oncekiKonulariGetir(kv: KVNamespace): Promise<string[]> {
-	const arsiv = await taslaklariListele(kv, 'arsiv', 15);
-	return arsiv.map((t) => `${t.temaEtiket}: ${t.aci}`);
+/** /arsiv — eski komut; yönlendirme mesajı */
+export async function komutArsiv(env: BotEnv, chatId: string): Promise<void> {
+	await mesajGonder(
+		env.TELEGRAM_TOKEN,
+		chatId,
+		'/arsiv kaldırıldı.\n\nPlanlanmış postlar için /taslaklar\nYayınlananlar için /yayinlandi',
+	);
 }
 
-/** Taslak mesajı — revize ve arşiv butonlarıyla */
+/** Claude'un tekrar etmemesi için önceki konuları toplar */
+async function oncekiKonulariGetir(kv: KVNamespace): Promise<string[]> {
+	const [planli, yayinlanan] = await Promise.all([
+		taslaklariListele(kv, 'taslak', 10),
+		taslaklariListele(kv, 'yayinlandi', 10),
+	]);
+	return [...planli, ...yayinlanan].map((t) => `${t.temaEtiket}: ${t.aci}`);
+}
+
+/** Oturumdaki güncel metni taslağa uygular */
+function taslakGuncelMetinle(taslak: Draft, guncel?: GuncelTaslak): Draft {
+	if (!guncel) return taslak;
+	return { ...taslak, aci: guncel.aci, icerik: guncel.icerik };
+}
+
+/** Oturuma güncel taslak alanını yazar */
+function guncelTaslakAlani(taslak: Draft): GuncelTaslak {
+	return { aci: taslak.aci, icerik: taslak.icerik };
+}
+
+/** /yeni akışında tam taslak — revize ve arşivle butonları */
 async function taslakMesajiGonder(
 	env: BotEnv,
 	chatId: string,
 	t: Draft,
-	aksiyonButonlari: boolean,
 ): Promise<void> {
 	const tarih = new Date(t.olusturulma).toLocaleDateString('tr-TR');
-	const baslik = t.durum === 'arsiv' ? '📦 Arşiv' : '📝 Taslak';
-	const metin = `${baslik} · <b>${htmlKacir(t.temaEtiket)}</b> (${tarih})
+	const metin = `📝 <b>Taslak</b> · <b>${htmlKacir(t.temaEtiket)}</b> (${tarih})
 
 <b>Açı:</b> ${htmlKacir(t.aci)}
 
 <b>İçerik:</b>
 ${htmlKacir(t.icerik)}`;
 
-	const klavye: TelegramInlineKeyboard | undefined =
-		aksiyonButonlari && t.durum === 'taslak'
-			? {
-					inline_keyboard: [
-						[
-							{ text: '✏ Revize et', callback_data: `revize:${t.id}` },
-							{ text: '✅ Arşivle', callback_data: `arsiv:${t.id}` },
-						],
-					],
-				}
-			: undefined;
+	const klavye: TelegramInlineKeyboard = {
+		inline_keyboard: [
+			[
+				{ text: '✏ Revize et', callback_data: `revize:${t.id}` },
+				{ text: '✅ Arşivle', callback_data: `arsiv:${t.id}` },
+			],
+		],
+	};
+
+	await mesajGonder(env.TELEGRAM_TOKEN, chatId, metin, {
+		parse_mode: 'HTML',
+		reply_markup: klavye,
+	});
+}
+
+/** /taslaklar listesinde kısa önizleme — yayınlandı ve sil */
+async function planliTaslakMesajiGonder(env: BotEnv, chatId: string, t: Draft): Promise<void> {
+	const tarih = new Date(t.olusturulma).toLocaleDateString('tr-TR');
+	const onizleme =
+		t.icerik.length > 200 ? `${t.icerik.slice(0, 200)}…` : t.icerik;
+
+	const metin = `📝 <b>${htmlKacir(t.temaEtiket)}</b> · ${tarih}
+
+<b>Açı:</b> ${htmlKacir(t.aci)}
+
+${htmlKacir(onizleme)}`;
+
+	const klavye: TelegramInlineKeyboard = {
+		inline_keyboard: [
+			[
+				{ text: '✅ Yayınlandı', callback_data: `yayinla:${t.id}` },
+				{ text: '🗑 Sil', callback_data: `sil:${t.id}` },
+			],
+		],
+	};
+
+	await mesajGonder(env.TELEGRAM_TOKEN, chatId, metin, {
+		parse_mode: 'HTML',
+		reply_markup: klavye,
+	});
+}
+
+/** /yayinlandi listesinde — yalnızca sil */
+async function yayinlananTaslakMesajiGonder(env: BotEnv, chatId: string, t: Draft): Promise<void> {
+	const tarih = t.yayinTarihi
+		? new Date(t.yayinTarihi).toLocaleDateString('tr-TR')
+		: new Date(t.olusturulma).toLocaleDateString('tr-TR');
+
+	const metin = `✅ <b>${htmlKacir(t.temaEtiket)}</b> · Yayın: ${tarih}
+
+<b>Açı:</b> ${htmlKacir(t.aci)}`;
+
+	const klavye: TelegramInlineKeyboard = {
+		inline_keyboard: [[{ text: '🗑 Sil', callback_data: `sil:${t.id}` }]],
+	};
 
 	await mesajGonder(env.TELEGRAM_TOKEN, chatId, metin, {
 		parse_mode: 'HTML',
@@ -146,7 +234,6 @@ export async function temaSecildi(
 
 	await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, `${tema.etiket} seçildi`);
 
-	// Oturum: önce tema_secildi, ardından not_bekleniyor
 	await oturumKaydet(env.LIDERLIK_KV, chatId, {
 		adim: 'tema_secildi',
 		temaId: tema.id,
@@ -277,16 +364,18 @@ export async function aciSecildi(
 			durum: 'taslak',
 			olusturulma: new Date().toISOString(),
 		};
-		await taslakKaydet(env.LIDERLIK_KV, taslak);
+
+		const guncelTaslak = guncelTaslakAlani(taslak);
 
 		await oturumKaydet(env.LIDERLIK_KV, chatId, {
 			...oturum,
 			adim: 'taslak_gosterildi',
 			secilenAci,
 			taslakId: id,
+			guncel_taslak: guncelTaslak,
 		});
 
-		await taslakMesajiGonder(env, chatId, taslak, true);
+		await taslakMesajiGonder(env, chatId, taslak);
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : 'Bilinmeyen hata';
 		await oturumSil(env.LIDERLIK_KV, chatId);
@@ -306,8 +395,24 @@ export async function revizeBaslat(
 	taslakId: string,
 	callbackQueryId: string,
 ): Promise<void> {
-	const taslak = await taslakGetir(env.LIDERLIK_KV, taslakId);
-	if (!taslak || taslak.durum !== 'taslak') {
+	const oturum = await oturumGetir(env.LIDERLIK_KV, chatId);
+	let taslak: Draft | null = null;
+
+	if (oturum?.taslakId === taslakId && oturum.guncel_taslak) {
+		taslak = {
+			id: taslakId,
+			tema: oturum.temaId,
+			temaEtiket: oturum.temaEtiket,
+			aci: oturum.guncel_taslak.aci,
+			icerik: oturum.guncel_taslak.icerik,
+			durum: 'taslak',
+			olusturulma: new Date().toISOString(),
+		};
+	} else {
+		taslak = await taslakGetir(env.LIDERLIK_KV, taslakId);
+	}
+
+	if (!taslak) {
 		await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Taslak bulunamadı');
 		return;
 	}
@@ -319,6 +424,7 @@ export async function revizeBaslat(
 		temaId: taslak.tema,
 		temaEtiket: taslak.temaEtiket,
 		taslakId: taslak.id,
+		guncel_taslak: guncelTaslakAlani(taslak),
 	});
 
 	await mesajGonder(
@@ -329,7 +435,7 @@ export async function revizeBaslat(
 	);
 }
 
-/** Revize notu alındı — Claude ile yeniden yaz */
+/** Revize notu alındı — Claude ile yeniden yaz, oturumdaki guncel_taslak güncellenir */
 export async function revizeNotuAlindi(
 	env: BotEnv,
 	chatId: string,
@@ -338,8 +444,19 @@ export async function revizeNotuAlindi(
 	const oturum = await oturumGetir(env.LIDERLIK_KV, chatId);
 	if (!oturum || oturum.adim !== 'revize_bekleniyor' || !oturum.taslakId) return;
 
-	const taslak = await taslakGetir(env.LIDERLIK_KV, oturum.taslakId);
-	if (!taslak) {
+	const mevcut = oturum.guncel_taslak
+		? {
+				id: oturum.taslakId,
+				tema: oturum.temaId,
+				temaEtiket: oturum.temaEtiket,
+				aci: oturum.guncel_taslak.aci,
+				icerik: oturum.guncel_taslak.icerik,
+				durum: 'taslak' as const,
+				olusturulma: new Date().toISOString(),
+			}
+		: await taslakGetir(env.LIDERLIK_KV, oturum.taslakId);
+
+	if (!mevcut) {
 		await oturumSil(env.LIDERLIK_KV, chatId);
 		return;
 	}
@@ -347,16 +464,17 @@ export async function revizeNotuAlindi(
 	await mesajGonder(env.TELEGRAM_TOKEN, chatId, '⏳ Taslak revize ediliyor…');
 
 	try {
-		const yeniIcerik = await taslakRevizeEt(env.ANTHROPIC_API_KEY, taslak, revizeNotu);
-		const guncel: Draft = { ...taslak, icerik: yeniIcerik };
-		await taslakKaydet(env.LIDERLIK_KV, guncel);
+		const yeniIcerik = await taslakRevizeEt(env.ANTHROPIC_API_KEY, mevcut, revizeNotu);
+		const guncelTaslak: GuncelTaslak = { aci: mevcut.aci, icerik: yeniIcerik };
 
 		await oturumKaydet(env.LIDERLIK_KV, chatId, {
 			...oturum,
 			adim: 'taslak_gosterildi',
+			guncel_taslak: guncelTaslak,
 		});
 
-		await taslakMesajiGonder(env, chatId, guncel, true);
+		const gosterim: Draft = { ...mevcut, icerik: yeniIcerik };
+		await taslakMesajiGonder(env, chatId, gosterim);
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : 'Bilinmeyen hata';
 		await mesajGonder(
@@ -368,29 +486,90 @@ export async function revizeNotuAlindi(
 	}
 }
 
-/** Arşivle callback — KV'ye kaydet, 2 gün sonrasına hatırlatma görevi ekle */
+/** Arşivle — oturumdaki son revize metnini taslak:liste'ye kaydeder */
 export async function arsivleTaslak(
 	env: BotEnv,
 	chatId: string,
 	taslakId: string,
 	callbackQueryId: string,
 ): Promise<void> {
-	const guncel = await taslakArsivle(env.LIDERLIK_KV, taslakId);
+	const oturum = await oturumGetir(env.LIDERLIK_KV, chatId);
+	let taslak = await taslakGetir(env.LIDERLIK_KV, taslakId);
+
+	// Oturumdaki güncel metin öncelikli (henüz KV'ye yazılmamış revizeler)
+	if (oturum?.taslakId === taslakId && oturum.guncel_taslak) {
+		const temel: Draft = taslak ?? {
+			id: taslakId,
+			tema: oturum.temaId,
+			temaEtiket: oturum.temaEtiket,
+			aci: oturum.guncel_taslak.aci,
+			icerik: oturum.guncel_taslak.icerik,
+			durum: 'taslak',
+			olusturulma: new Date().toISOString(),
+		};
+		taslak = taslakGuncelMetinle(temel, oturum.guncel_taslak);
+	}
+
+	if (!taslak) {
+		await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Taslak bulunamadı');
+		return;
+	}
+
+	const guncel = await taslakArsivle(env.LIDERLIK_KV, taslak);
+	await ikiGunSonraGoreviEkle(env, guncel);
+	await oturumSil(env.LIDERLIK_KV, chatId);
+
+	await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Planlanmış listeye alındı');
+	await mesajGonder(
+		env.TELEGRAM_TOKEN,
+		chatId,
+		`✅ <b>${htmlKacir(guncel.temaEtiket)}</b> planlanmış taslaklara kaydedildi.\n2 gün sonra hatırlatma gönderilecek.`,
+		{ parse_mode: 'HTML' },
+	);
+}
+
+/** Yayınlandı — taslak listesinden yayinlandi listesine taşır */
+export async function yayinlaTaslak(
+	env: BotEnv,
+	chatId: string,
+	taslakId: string,
+	callbackQueryId: string,
+): Promise<void> {
+	const guncel = await taslakYayinlandi(env.LIDERLIK_KV, taslakId);
 	if (!guncel) {
 		await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Taslak bulunamadı');
 		return;
 	}
 
-	await ikiGunSonraGoreviEkle(env, guncel);
-	await oturumSil(env.LIDERLIK_KV, chatId);
-
-	await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Arşive alındı');
+	await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Yayınlandı olarak işaretlendi');
 	await mesajGonder(
 		env.TELEGRAM_TOKEN,
 		chatId,
-		`✅ <b>${htmlKacir(guncel.temaEtiket)}</b> arşive taşındı.\n2 gün sonra hatırlatma gönderilecek.`,
+		`✅ <b>${htmlKacir(guncel.temaEtiket)}</b> yayınlandı listesine taşındı.`,
 		{ parse_mode: 'HTML' },
 	);
+}
+
+/** Sil — KV ve listeden kaldırır */
+export async function silTaslak(
+	env: BotEnv,
+	chatId: string,
+	taslakId: string,
+	callbackQueryId: string,
+): Promise<void> {
+	const silindi = await taslakSil(env.LIDERLIK_KV, taslakId);
+	if (!silindi) {
+		await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Taslak bulunamadı');
+		return;
+	}
+
+	const oturum = await oturumGetir(env.LIDERLIK_KV, chatId);
+	if (oturum?.taslakId === taslakId) {
+		await oturumSil(env.LIDERLIK_KV, chatId);
+	}
+
+	await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Silindi');
+	await mesajGonder(env.TELEGRAM_TOKEN, chatId, '🗑 Taslak silindi.');
 }
 
 /** Oturum adımına göre gelen metin mesajını yönlendir */
@@ -423,7 +602,7 @@ async function ikiGunSonraGoreviEkle(env: BotEnv, taslak: Draft): Promise<void> 
 	const hedef = ikiGunSonraSabahUtc06();
 	const gorev: ScheduledTask = {
 		id: crypto.randomUUID(),
-		mesaj: `🔔 <b>Hatırlatma</b>\n\n<b>${taslak.temaEtiket}</b> arşivlendi — paylaşım zamanı geldi mi?\n\nAçı: ${taslak.aci.slice(0, 200)}${taslak.aci.length > 200 ? '…' : ''}`,
+		mesaj: `🔔 <b>Hatırlatma</b>\n\n<b>${taslak.temaEtiket}</b> planlandı — paylaşım zamanı geldi mi?\n\nAçı: ${taslak.aci.slice(0, 200)}${taslak.aci.length > 200 ? '…' : ''}`,
 		planlanan: hedef.toISOString(),
 		gonderildi: false,
 		olusturulma: new Date().toISOString(),

@@ -18,14 +18,35 @@ async function listeYaz(kv: KVNamespace, anahtar: string, ids: string[]): Promis
 	await kv.put(anahtar, JSON.stringify(ids));
 }
 
+/** Duruma göre liste anahtarı */
+function listeAnahtari(durum: DraftStatus): string {
+	return durum === 'yayinlandi' ? KV_KEYS.YAYINLANDI_LISTESI : KV_KEYS.TASLAK_LISTESI;
+}
+
+/** Taslağı diğer listeden çıkarır (durum değişiminde) */
+async function listedenCikar(kv: KVNamespace, id: string, haricDurum?: DraftStatus): Promise<void> {
+	const listeler: { durum: DraftStatus; anahtar: string }[] = [
+		{ durum: 'taslak', anahtar: KV_KEYS.TASLAK_LISTESI },
+		{ durum: 'yayinlandi', anahtar: KV_KEYS.YAYINLANDI_LISTESI },
+	];
+	for (const { durum, anahtar } of listeler) {
+		if (haricDurum === durum) continue;
+		const liste = (await listeOku(kv, anahtar)).filter((x) => x !== id);
+		await listeYaz(kv, anahtar, liste);
+	}
+}
+
 export async function taslakKaydet(kv: KVNamespace, taslak: Draft): Promise<void> {
 	await kv.put(KV_KEYS.taslak(taslak.id), JSON.stringify(taslak));
-	const listeAnahtar =
-		taslak.durum === 'arsiv' ? KV_KEYS.ARSIV_LISTESI : KV_KEYS.TASLAK_LISTESI;
-	const liste = await listeOku(kv, listeAnahtar);
+
+	// Önce her iki listeden de temizle, sonra doğru listeye ekle
+	await listedenCikar(kv, taslak.id, taslak.durum);
+
+	const anahtar = listeAnahtari(taslak.durum);
+	const liste = await listeOku(kv, anahtar);
 	if (!liste.includes(taslak.id)) {
 		liste.unshift(taslak.id);
-		await listeYaz(kv, listeAnahtar, liste);
+		await listeYaz(kv, anahtar, liste);
 	}
 }
 
@@ -35,13 +56,13 @@ export async function taslakGetir(kv: KVNamespace, id: string): Promise<Draft | 
 	return JSON.parse(ham) as Draft;
 }
 
+/** Planlanmış veya yayınlanmış taslakları listeler */
 export async function taslaklariListele(
 	kv: KVNamespace,
 	durum: DraftStatus,
 	limit = 10,
 ): Promise<Draft[]> {
-	const anahtar = durum === 'arsiv' ? KV_KEYS.ARSIV_LISTESI : KV_KEYS.TASLAK_LISTESI;
-	const ids = (await listeOku(kv, anahtar)).slice(0, limit);
+	const ids = (await listeOku(kv, listeAnahtari(durum))).slice(0, limit);
 	const taslaklar: Draft[] = [];
 	for (const id of ids) {
 		const t = await taslakGetir(kv, id);
@@ -50,17 +71,38 @@ export async function taslaklariListele(
 	return taslaklar;
 }
 
-/** Taslağı arşive taşır */
-export async function taslakArsivle(kv: KVNamespace, id: string): Promise<Draft | null> {
-	const taslak = await taslakGetir(kv, id);
-	if (!taslak || taslak.durum === 'arsiv') return taslak;
-
-	const taslakIds = (await listeOku(kv, KV_KEYS.TASLAK_LISTESI)).filter((x) => x !== id);
-	await listeYaz(kv, KV_KEYS.TASLAK_LISTESI, taslakIds);
-
-	const guncel: Draft = { ...taslak, durum: 'arsiv' };
+/**
+ * Arşivle — planlanmış listeye (taslak:liste) kaydeder.
+ * İçerik çağırandan gelir (oturumdaki guncel_taslak ile birleştirilmiş hali).
+ */
+export async function taslakArsivle(kv: KVNamespace, taslak: Draft): Promise<Draft> {
+	const guncel: Draft = { ...taslak, durum: 'taslak' };
 	await taslakKaydet(kv, guncel);
 	return guncel;
+}
+
+/** Taslak listesinden çıkarıp yayınlandı listesine taşır */
+export async function taslakYayinlandi(kv: KVNamespace, id: string): Promise<Draft | null> {
+	const taslak = await taslakGetir(kv, id);
+	if (!taslak || taslak.durum === 'yayinlandi') return taslak;
+
+	const guncel: Draft = {
+		...taslak,
+		durum: 'yayinlandi',
+		yayinTarihi: new Date().toISOString(),
+	};
+	await taslakKaydet(kv, guncel);
+	return guncel;
+}
+
+/** KV kaydını ve her iki listeden id'yi siler */
+export async function taslakSil(kv: KVNamespace, id: string): Promise<boolean> {
+	const taslak = await taslakGetir(kv, id);
+	if (!taslak) return false;
+
+	await listedenCikar(kv, id);
+	await kv.delete(KV_KEYS.taslak(id));
+	return true;
 }
 
 export async function gorevKaydet(kv: KVNamespace, gorev: ScheduledTask): Promise<void> {

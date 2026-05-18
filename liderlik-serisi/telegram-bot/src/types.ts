@@ -1,5 +1,5 @@
-/** Taslak durumu */
-export type DraftStatus = 'taslak' | 'arsiv';
+/** Taslak durumu — taslak: planlanmış/bekleyen, yayinlandi: paylaşıldı */
+export type DraftStatus = 'taslak' | 'yayinlandi';
 
 /** KV'de saklanan LinkedIn post taslağı */
 export interface Draft {
@@ -10,6 +10,14 @@ export interface Draft {
 	icerik: string;
 	durum: DraftStatus;
 	olusturulma: string;
+	/** Yayınlandı işaretlendiğinde ISO tarih */
+	yayinTarihi?: string;
+}
+
+/** Oturumda tutulan güncel taslak metni (revize sonrası güncellenir) */
+export interface GuncelTaslak {
+	aci: string;
+	icerik: string;
 }
 
 /** Zamanlanmış Telegram bildirimi */
@@ -42,6 +50,8 @@ export interface UserSession {
 	secilenAci?: string;
 	/** Üretilen taslağın id'si */
 	taslakId?: string;
+	/** Her revize sonrası güncellenen metin — Arşivle bunu kaydeder */
+	guncel_taslak?: GuncelTaslak;
 }
 
 /** Liderlik serisi tema tanımı */

@@ -7,17 +7,23 @@ import { zamanlanmisGorevCalistir } from './cron';
 import {
 	aciSecildi,
 	arsivleTaslak,
+	botKomutMenusunuGuncelle,
 	komutArsiv,
+	komutKomutlar,
+	komutStart,
 	komutTaslaklar,
-	komutYardim,
+	komutYayinlandi,
 	komutYeni,
 	notAlindi,
 	oturumMesajiIsle,
 	revizeBaslat,
+	silTaslak,
 	temaSecildi,
+	yayinlaTaslak,
 	type BotEnv,
 } from './handlers';
 import { oturumGetir } from './kv-storage';
+import { mesajGonder } from './telegram';
 
 // --- Telegram güncelleme tipleri (minimal) ---
 
@@ -82,9 +88,10 @@ async function mesajIsle(env: BotEnv, message: TelegramMessage): Promise<void> {
 
 	switch (komut) {
 		case '/start':
-		case '/yardim':
-		case '/help':
-			await komutYardim(env, chatId);
+			await komutStart(env, chatId);
+			break;
+		case '/komutlar':
+			await komutKomutlar(env, chatId);
 			break;
 		case '/yeni':
 			await komutYeni(env, chatId);
@@ -92,8 +99,15 @@ async function mesajIsle(env: BotEnv, message: TelegramMessage): Promise<void> {
 		case '/taslaklar':
 			await komutTaslaklar(env, chatId);
 			break;
+		case '/yayinlandi':
+			await komutYayinlandi(env, chatId);
+			break;
 		case '/arsiv':
 			await komutArsiv(env, chatId);
+			break;
+		case '/konser':
+		case '/ucak':
+			await mesajGonderYakininda(env, chatId);
 			break;
 		case '/atla': {
 			const oturum = await oturumGetir(env.LIDERLIK_KV, chatId);
@@ -105,18 +119,16 @@ async function mesajIsle(env: BotEnv, message: TelegramMessage): Promise<void> {
 		}
 		default:
 			if (metin.startsWith('/')) {
-				await komutYardim(env, chatId);
+				await komutKomutlar(env, chatId);
 			} else {
-				const islendi = await oturumMesajiIsle(env, chatId, metin);
-				if (!islendi) {
-					const oturum = await oturumGetir(env.LIDERLIK_KV, chatId);
-					if (oturum) {
-						await komutYardim(env, chatId);
-					}
-				}
+				await oturumMesajiIsle(env, chatId, metin);
 			}
 			break;
 	}
+}
+
+async function mesajGonderYakininda(env: BotEnv, chatId: string): Promise<void> {
+	await mesajGonder(env.TELEGRAM_TOKEN, chatId, 'Bu özellik yakında eklenecek.');
 }
 
 async function callbackIsle(env: BotEnv, query: TelegramCallbackQuery): Promise<void> {
@@ -150,6 +162,18 @@ async function callbackIsle(env: BotEnv, query: TelegramCallbackQuery): Promise<
 	if (data.startsWith('arsiv:')) {
 		const taslakId = data.slice('arsiv:'.length);
 		await arsivleTaslak(env, chatIdStr, taslakId, query.id);
+		return;
+	}
+
+	if (data.startsWith('yayinla:')) {
+		const taslakId = data.slice('yayinla:'.length);
+		await yayinlaTaslak(env, chatIdStr, taslakId, query.id);
+		return;
+	}
+
+	if (data.startsWith('sil:')) {
+		const taslakId = data.slice('sil:'.length);
+		await silTaslak(env, chatIdStr, taslakId, query.id);
 	}
 }
 
@@ -158,8 +182,13 @@ export default {
 		const url = new URL(request.url);
 		const botEnv = envDenBotEnv(env);
 
-		// Sağlık kontrolü
+		// Sağlık kontrolü — deploy sonrası komut menüsünü güncelle
 		if (url.pathname === '/' && request.method === 'GET') {
+			ctx.waitUntil(
+				botKomutMenusunuGuncelle(botEnv).catch((err) => {
+					console.error('Komut menüsü güncelleme hatası:', err);
+				}),
+			);
 			return new Response('Liderlik Serisi Telegram Bot — aktif', {
 				headers: { 'Content-Type': 'text/plain; charset=utf-8' },
 			});
