@@ -64,7 +64,7 @@ export async function callbackYanitla(
 export async function komutMenuGuncelle(token: string): Promise<void> {
 	const komutlar = [
 		{ command: 'yeni', description: 'Yeni LinkedIn postu oluştur' },
-		{ command: 'taslaklar', description: 'Planlanmış postları göster' },
+		{ command: 'taslaklar', description: 'Haftalık yayın kuyruğu (Pazartesi)' },
 		{ command: 'yayinlandi', description: 'Yayınlanan postları göster' },
 		{ command: 'istatistik', description: 'Paylaşım istatistiklerini göster' },
 		{ command: 'komutlar', description: 'Tüm komutları listele' },

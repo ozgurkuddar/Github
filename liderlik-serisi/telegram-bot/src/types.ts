@@ -1,3 +1,11 @@
+/** Worker ortamı — KV ve API anahtarları */
+export interface BotEnv {
+	LIDERLIK_KV: KVNamespace;
+	TELEGRAM_TOKEN: string;
+	TELEGRAM_CHAT_ID: string;
+	ANTHROPIC_API_KEY: string;
+}
+
 /** Taslak durumu — taslak: planlanmış/bekleyen, yayinlandi: paylaşıldı */
 export type DraftStatus = 'taslak' | 'yayinlandi';
 
@@ -12,6 +20,8 @@ export interface Draft {
 	olusturulma: string;
 	/** Yayınlandı işaretlendiğinde ISO tarih */
 	yayinTarihi?: string;
+	/** Haftalık kuyrukta hedef Pazartesi yayın anı (ISO, UTC 06:00) */
+	planlananYayin?: string;
 }
 
 /** Oturumda tutulan güncel taslak metni (revize sonrası güncellenir) */
@@ -23,6 +33,8 @@ export interface GuncelTaslak {
 /** Zamanlanmış Telegram bildirimi */
 export interface ScheduledTask {
 	id: string;
+	/** İlgili taslak — yayınlandığında görev iptal edilir */
+	taslakId?: string;
 	mesaj: string;
 	/** ISO 8601 — bu tarih/saat geçince gönderilir */
 	planlanan: string;

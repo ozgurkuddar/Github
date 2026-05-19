@@ -1,4 +1,5 @@
 import { KV_KEYS } from './constants';
+import { pazartesiYayinTarihi, planliYayinSirasiHesapla } from './schedule';
 import type { Draft, DraftStatus, ScheduledTask, UserSession } from './types';
 
 /** KV listesini JSON olarak okur */
@@ -130,6 +131,74 @@ export async function gorevKaydet(kv: KVNamespace, gorev: ScheduledTask): Promis
 
 export async function gorevGuncelle(kv: KVNamespace, gorev: ScheduledTask): Promise<void> {
 	await kv.put(KV_KEYS.gorev(gorev.id), JSON.stringify(gorev));
+}
+
+/** Planlanmış taslak kuyruğu id listesi (en yeni önde) */
+export async function planliTaslakIdleri(kv: KVNamespace): Promise<string[]> {
+	return listeOku(kv, KV_KEYS.TASLAK_LISTESI);
+}
+
+/**
+ * Kuyruktaki taslaklara planlananYayin atar (eski kayıtlar için).
+ * Sıra: en eski taslak → en yakın Pazartesi, sonrakiler +7 gün.
+ */
+export async function eksikPlanliYayinlariDoldur(kv: KVNamespace): Promise<void> {
+	const ids = await planliTaslakIdleri(kv);
+	for (let i = 0; i < ids.length; i++) {
+		const taslak = await taslakGetir(kv, ids[i]);
+		if (!taslak || taslak.durum !== 'taslak' || taslak.planlananYayin) continue;
+
+		const sira = planliYayinSirasiHesapla(ids.length, i);
+		const guncel: Draft = {
+			...taslak,
+			planlananYayin: pazartesiYayinTarihi(sira).toISOString(),
+		};
+		await kv.put(KV_KEYS.taslak(guncel.id), JSON.stringify(guncel));
+	}
+}
+
+/** Arşiv sonrası bu taslağın Pazartesi yayın tarihini kuyruk sırasına göre yazar */
+export async function taslakPlanliYayinAta(kv: KVNamespace, taslak: Draft): Promise<Draft> {
+	const ids = await planliTaslakIdleri(kv);
+	const idx = ids.indexOf(taslak.id);
+	if (idx === -1) return taslak;
+
+	const sira = planliYayinSirasiHesapla(ids.length, idx);
+	const guncel: Draft = {
+		...taslak,
+		planlananYayin: pazartesiYayinTarihi(sira).toISOString(),
+	};
+	await kv.put(KV_KEYS.taslak(guncel.id), JSON.stringify(guncel));
+	return guncel;
+}
+
+/** Taslak yayınlandığında veya silindiğinde bekleyen Pazartesi hatırlatmasını iptal eder */
+export async function taslakGorevleriniIptal(kv: KVNamespace, taslakId: string): Promise<void> {
+	const ids = await listeOku(kv, KV_KEYS.GOREV_LISTESI);
+	for (const id of ids) {
+		const ham = await kv.get(KV_KEYS.gorev(id));
+		if (!ham) continue;
+		const gorev = JSON.parse(ham) as ScheduledTask;
+		if (gorev.taslakId === taslakId && !gorev.gonderildi) {
+			gorev.gonderildi = true;
+			await gorevGuncelle(kv, gorev);
+		}
+	}
+}
+
+/** Gelecekteki Pazartesi hatırlatması var mı */
+export async function taslakIcinAktifGorevVar(
+	kv: KVNamespace,
+	taslakId: string,
+): Promise<boolean> {
+	const ids = await listeOku(kv, KV_KEYS.GOREV_LISTESI);
+	for (const id of ids) {
+		const ham = await kv.get(KV_KEYS.gorev(id));
+		if (!ham) continue;
+		const gorev = JSON.parse(ham) as ScheduledTask;
+		if (gorev.taslakId === taslakId && !gorev.gonderildi) return true;
+	}
+	return false;
 }
 
 /** Planlanan zamanı geçmiş ve henüz gönderilmemiş görevler */

@@ -2,18 +2,21 @@ import { aciOner, taslakRevizeEt, taslakUret } from './anthropic';
 import { TEMALAR } from './constants';
 import {
 	eskiVeriTasi,
-	gorevKaydet,
 	oturumGetir,
 	oturumKaydet,
 	oturumSil,
 	taslakArsivle,
 	taslakGetir,
+	taslakGorevleriniIptal,
 	taslakKaydet,
+	taslakPlanliYayinAta,
 	taslakSil,
 	taslakYayinlandi,
 	taslaklariListele,
 	tumTaslaklariListele,
 } from './kv-storage';
+import { planliYayinTarihMetni } from './schedule';
+import { pazartesiYayinGoreviEkle, planliTaslakKuyrugu } from './yayin-planlama';
 import {
 	callbackYanitla,
 	htmlKacir,
@@ -21,14 +24,9 @@ import {
 	mesajGonder,
 	type TelegramInlineKeyboard,
 } from './telegram';
-import type { Draft, GuncelTaslak, ScheduledTask, UserSession } from './types';
+import type { BotEnv, Draft, GuncelTaslak, UserSession } from './types';
 
-export interface BotEnv {
-	LIDERLIK_KV: KVNamespace;
-	TELEGRAM_TOKEN: string;
-	TELEGRAM_CHAT_ID: string;
-	ANTHROPIC_API_KEY: string;
-}
+export type { BotEnv };
 
 const BAGLAM_SORUSU =
 	'Bu tema için bağlam veya notun var mı?\n(Örn: güncel olay, kişisel gözlem, paylaşmak istediğin bir fikir)\n\nBoş geçmek için /atla yazabilirsin.';
@@ -40,7 +38,7 @@ const OTURUM_SURESI_DOLDU_METNI =
 const KOMUT_LISTESI_METNI = `<b>Liderlik Serisi Bot — Komutlar</b>
 
 /yeni — Yeni LinkedIn postu oluştur
-/taslaklar — Planlanmış/bekleyen postları göster
+/taslaklar — Haftalık yayın kuyruğu (Pazartesi)
 /yayinlandi — Yayınlanan postları göster
 /istatistik — Paylaşım istatistiklerini göster
 /komutlar — Bu listeyi göster
@@ -94,9 +92,9 @@ export async function komutYeni(env: BotEnv, chatId: string): Promise<void> {
 	);
 }
 
-/** /taslaklar — planlanmış/bekleyen postlar */
+/** /taslaklar — haftalık kuyruk (en yakın Pazartesi önce) */
 export async function komutTaslaklar(env: BotEnv, chatId: string): Promise<void> {
-	const taslaklar = await taslaklariListele(env.LIDERLIK_KV, 'taslak', 8);
+	const taslaklar = await planliTaslakKuyrugu(env, 8);
 	if (taslaklar.length === 0) {
 		await mesajGonder(
 			env.TELEGRAM_TOKEN,
@@ -411,12 +409,14 @@ ${htmlKacir(parca2)}`;
 	});
 }
 
-/** /taslaklar listesinde kısa önizleme — tema, tarih, açı ve ilk 100 karakter */
+/** /taslaklar listesinde kısa önizleme — tema, yayın günü, açı */
 async function planliTaslakMesajiGonder(env: BotEnv, chatId: string, t: Draft): Promise<void> {
-	const tarih = new Date(t.olusturulma).toLocaleDateString('tr-TR');
 	const onizleme = icerikOnizleme(t.icerik);
+	const yayinSatiri = t.planlananYayin
+		? `\n📅 <b>Yayın:</b> ${htmlKacir(planliYayinTarihMetni(t.planlananYayin))}`
+		: '';
 
-	const metin = `📝 <b>${htmlKacir(t.temaEtiket)}</b> · ${tarih}
+	const metin = `📝 <b>${htmlKacir(t.temaEtiket)}</b>${yayinSatiri}
 
 <b>Açı:</b> ${htmlKacir(t.aci)}
 
@@ -987,15 +987,20 @@ export async function arsivleTaslak(
 		return;
 	}
 
-	const guncel = await taslakArsivle(env.LIDERLIK_KV, taslak);
-	await ikiGunSonraGoreviEkle(env, guncel);
+	const arsivlenen = await taslakArsivle(env.LIDERLIK_KV, taslak);
+	const guncel = await taslakPlanliYayinAta(env.LIDERLIK_KV, arsivlenen);
+	await pazartesiYayinGoreviEkle(env, guncel);
 	await oturumSil(env.LIDERLIK_KV, chatId);
+
+	const yayinMetni = guncel.planlananYayin
+		? planliYayinTarihMetni(guncel.planlananYayin)
+		: 'yakında';
 
 	await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Planlanmış listeye alındı');
 	await mesajGonder(
 		env.TELEGRAM_TOKEN,
 		chatId,
-		`✅ <b>${htmlKacir(guncel.temaEtiket)}</b> planlanmış taslaklara kaydedildi.\n2 gün sonra hatırlatma gönderilecek.`,
+		`✅ <b>${htmlKacir(guncel.temaEtiket)}</b> haftalık yayın kuyruğuna eklendi.\n\n📅 <b>Yayın:</b> ${htmlKacir(yayinMetni)}\n\nPazartesi sabahı hatırlatma gönderilecek.`,
 		{ parse_mode: 'HTML' },
 	);
 }
@@ -1012,6 +1017,8 @@ export async function yayinlaTaslak(
 		await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Taslak bulunamadı');
 		return;
 	}
+
+	await taslakGorevleriniIptal(env.LIDERLIK_KV, taslakId);
 
 	await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Yayınlandı olarak işaretlendi');
 	await mesajGonder(
@@ -1034,6 +1041,8 @@ export async function silTaslak(
 		await callbackYanitla(env.TELEGRAM_TOKEN, callbackQueryId, 'Taslak bulunamadı');
 		return;
 	}
+
+	await taslakGorevleriniIptal(env.LIDERLIK_KV, taslakId);
 
 	const oturum = await oturumGetir(env.LIDERLIK_KV, chatId);
 	if (oturum?.taslakId === taslakId) {
@@ -1070,25 +1079,4 @@ function aciButonMetni(aci: string, numara: number): string {
 	const max = 60;
 	const govde = aci.length > max - onEk.length ? `${aci.slice(0, max - onEk.length - 1)}…` : aci;
 	return onEk + govde;
-}
-
-/** 2 gün sonra 09:00 TR (UTC 06:00) için hatırlatma görevi */
-async function ikiGunSonraGoreviEkle(env: BotEnv, taslak: Draft): Promise<void> {
-	const hedef = ikiGunSonraSabahUtc06();
-	const gorev: ScheduledTask = {
-		id: crypto.randomUUID(),
-		mesaj: `🔔 <b>Hatırlatma</b>\n\n<b>${taslak.temaEtiket}</b> planlandı — paylaşım zamanı geldi mi?\n\nAçı: ${taslak.aci.slice(0, 200)}${taslak.aci.length > 200 ? '…' : ''}`,
-		planlanan: hedef.toISOString(),
-		gonderildi: false,
-		olusturulma: new Date().toISOString(),
-	};
-	await gorevKaydet(env.LIDERLIK_KV, gorev);
-}
-
-/** Türkiye 09:00 = UTC 06:00 — 2 gün sonra */
-function ikiGunSonraSabahUtc06(): Date {
-	const d = new Date();
-	d.setUTCDate(d.getUTCDate() + 2);
-	d.setUTCHours(6, 0, 0, 0);
-	return d;
 }
