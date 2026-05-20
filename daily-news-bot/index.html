@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Endüstri Radar — Haber Paneli</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0d0f;
+      --bg2: #111518;
+      --bg3: #161c20;
+      --border: #1e2830;
+      --border2: #253040;
+      --text: #e8edf2;
+      --text2: #8a9bb0;
+      --text3: #4a5a6a;
+      --accent: #00d4aa;
+      --accent2: #0099ff;
+      --cat1: #3d9df8; /* cam elyaf */
+      --cat2: #f85c5c; /* antidamping */
+      --cat3: #4ecb6e; /* rüzgar */
+      --cat4: #f5c842; /* otomotiv */
+      --cat5: #f5823a; /* ctp boru */
+      --cat6: #a0a8b8; /* firma */
+      --radius: 12px;
+      --font-display: 'DM Serif Display', serif;
+      --font-body: 'DM Sans', sans-serif;
+      --font-mono: 'DM Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Grid texture overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,212,170,0.015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,212,170,0.015) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Glow accent */
+    body::after {
+      content: '';
+      position: fixed;
+      top: -200px;
+      right: -200px;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(0,212,170,0.06) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* HEADER */
+    header {
+      padding: 40px 0 32px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 40px;
+    }
+
+    .header-inner {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .logo-group {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .logo-icon {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      flex-shrink: 0;
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: 32px;
+      font-weight: 400;
+      line-height: 1;
+      letter-spacing: -0.5px;
+    }
+
+    h1 span {
+      color: var(--accent);
+      font-style: italic;
+    }
+
+    .tagline {
+      font-size: 13px;
+      color: var(--text3);
+      font-family: var(--font-mono);
+      letter-spacing: 0.05em;
+      margin-top: 4px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .live-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: rgba(0,212,170,0.1);
+      border: 1px solid rgba(0,212,170,0.2);
+      border-radius: 20px;
+      font-size: 12px;
+      color: var(--accent);
+      font-family: var(--font-mono);
+    }
+
+    .live-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--accent);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+    }
+
+    /* NAV TABS */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 32px;
+      padding: 4px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      width: fit-content;
+    }
+
+    .tab {
+      padding: 8px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      color: var(--text2);
+      transition: all 0.2s;
+      border: none;
+      background: none;
+    }
+
+    .tab:hover { color: var(--text); }
+
+    .tab.active {
+      background: var(--bg3);
+      color: var(--accent);
+      border: 1px solid var(--border2);
+    }
+
+    /* STATS BAR */
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+
+    .stat-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      transition: border-color 0.2s;
+    }
+
+    .stat-card:hover { border-color: var(--border2); }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--text3);
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-family: var(--font-display);
+      color: var(--text);
+      line-height: 1;
+    }
+
+    .stat-sub {
+      font-size: 11px;
+      color: var(--text3);
+      margin-top: 4px;
+    }
+
+    /* SECTION */
+    .section { display: none; }
+    .section.active { display: block; }
+
+    /* CATEGORY CARDS */
+    .categories-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 16px;
+    }
+
+    .cat-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      transition: all 0.25s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cat-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--cat-color, var(--accent));
+      opacity: 0.7;
+    }
+
+    .cat-card:hover {
+      border-color: var(--border2);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+
+    .cat-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .cat-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--cat-color, var(--accent));
+      flex-shrink: 0;
+    }
+
+    .cat-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      font-family: var(--font-mono);
+    }
+
+    .cat-badge {
+      margin-left: auto;
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.05);
+      color: var(--text3);
+      font-family: var(--font-mono);
+    }
+
+    .cat-news-title {
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--text);
+      line-height: 1.4;
+      margin-bottom: 8px;
+    }
+
+    .cat-summary {
+      font-size: 13px;
+      color: var(--text2);
+      line-height: 1.6;
+      margin-bottom: 12px;
+    }
+
+    .cat-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--text3);
+      font-family: var(--font-mono);
+    }
+
+    .cat-link {
+      margin-left: auto;
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: opacity 0.2s;
+    }
+
+    .cat-link:hover { opacity: 0.7; }
+
+    .no-news {
+      color: var(--text3);
+      font-size: 13px;
+      font-style: italic;
+    }
+
+    /* SOURCES TABLE */
+    .sources-table {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .table-header {
+      display: grid;
+      grid-template-columns: 1fr 160px 120px 80px;
+      gap: 16px;
+      padding: 12px 20px;
+      background: var(--bg3);
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--text3);
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .table-row {
+      display: grid;
+      grid-template-columns: 1fr 160px 120px 80px;
+      gap: 16px;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      align-items: center;
+      transition: background 0.15s;
+    }
+
+    .table-row:last-child { border-bottom: none; }
+    .table-row:hover { background: var(--bg3); }
+
+    .table-title { font-size: 13px; color: var(--text); font-weight: 500; }
+    .table-title a { color: inherit; text-decoration: none; }
+    .table-title a:hover { color: var(--accent); }
+
+    .table-cat {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text3);
+    }
+
+    .table-date {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text3);
+    }
+
+    .delete-btn {
+      background: none;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      color: var(--text3);
+      cursor: pointer;
+      font-size: 12px;
+      padding: 4px 8px;
+      transition: all 0.15s;
+    }
+
+    .delete-btn:hover {
+      border-color: #f85c5c;
+      color: #f85c5c;
+    }
+
+    /* FAVORITES */
+    .favorites-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .fav-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      transition: all 0.2s;
+    }
+
+    .fav-card:hover { border-color: var(--border2); }
+
+    .fav-star { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
+
+    .fav-content { flex: 1; }
+    .fav-cat {
+      font-size: 10px;
+      font-family: var(--font-mono);
+      color: var(--text3);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 4px;
+    }
+    .fav-title {
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 4px;
+    }
+    .fav-meta {
+      font-size: 11px;
+      color: var(--text3);
+      font-family: var(--font-mono);
+    }
+
+    .fav-link {
+      flex-shrink: 0;
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 12px;
+      font-family: var(--font-mono);
+      margin-top: 2px;
+    }
+
+    /* EMPTY STATE */
+    .empty-state {
+      text-align: center;
+      padding: 60px 24px;
+      color: var(--text3);
+    }
+
+    .empty-icon { font-size: 40px; margin-bottom: 16px; }
+    .empty-title { font-size: 16px; font-weight: 500; color: var(--text2); margin-bottom: 8px; }
+    .empty-desc { font-size: 13px; line-height: 1.6; }
+
+    /* SETUP GUIDE */
+    .setup-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+
+    .setup-title {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--accent);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .step-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .step {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    .step-num {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: rgba(0,212,170,0.15);
+      border: 1px solid rgba(0,212,170,0.3);
+      color: var(--accent);
+      font-size: 11px;
+      font-family: var(--font-mono);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .step-content { flex: 1; }
+    .step-label { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 4px; }
+    .step-desc { font-size: 12px; color: var(--text2); line-height: 1.5; }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--accent);
+    }
+
+    /* LOCAL STORAGE BASED DATA MANAGEMENT */
+    .refresh-btn {
+      padding: 8px 18px;
+      background: rgba(0,212,170,0.1);
+      border: 1px solid rgba(0,212,170,0.3);
+      border-radius: 8px;
+      color: var(--accent);
+      font-size: 12px;
+      font-family: var(--font-mono);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .refresh-btn:hover {
+      background: rgba(0,212,170,0.2);
+    }
+
+    /* MODAL */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal {
+      background: var(--bg2);
+      border: 1px solid var(--border2);
+      border-radius: 16px;
+      padding: 28px;
+      max-width: 480px;
+      width: 90%;
+    }
+    .modal-title {
+      font-family: var(--font-display);
+      font-size: 20px;
+      margin-bottom: 8px;
+    }
+    .modal-desc { font-size: 13px; color: var(--text2); margin-bottom: 20px; line-height: 1.6; }
+    .modal-btns { display: flex; gap: 8px; justify-content: flex-end; }
+    .btn-cancel {
+      padding: 8px 16px;
+      background: none;
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      color: var(--text2);
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .btn-danger {
+      padding: 8px 16px;
+      background: rgba(248,92,92,0.15);
+      border: 1px solid rgba(248,92,92,0.3);
+      border-radius: 8px;
+      color: #f85c5c;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    @media (max-width: 640px) {
+      h1 { font-size: 24px; }
+      .stats-bar { grid-template-columns: repeat(2, 1fr); }
+      .categories-grid { grid-template-columns: 1fr; }
+      .table-header, .table-row { grid-template-columns: 1fr 100px; }
+      .table-header > *:nth-child(n+3), .table-row > *:nth-child(n+3) { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <div class="header-inner">
+      <div class="logo-group">
+        <div class="logo-icon">📡</div>
+        <div>
+          <h1>Endüstri <span>Radar</span></h1>
+          <div class="tagline">// günlük sektör haber paneli</div>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="live-badge">
+          <div class="live-dot"></div>
+          <span id="lastUpdate">Yükleniyor...</span>
+        </div>
+        <button class="refresh-btn" onclick="loadAll()">↺ Yenile</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('haberler')">📰 Haberler</button>
+    <button class="tab" onclick="switchTab('kaynaklar')">📚 Kaynaklar</button>
+    <button class="tab" onclick="switchTab('favoriler')">⭐ Favoriler</button>
+    <button class="tab" onclick="switchTab('kurulum')">⚙️ Kurulum</button>
+  </div>
+
+  <!-- STATS -->
+  <div class="stats-bar">
+    <div class="stat-card">
+      <div class="stat-label">Toplam Kaynak</div>
+      <div class="stat-value" id="stat-sources">—</div>
+      <div class="stat-sub">kaydedilmiş</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Favori Haber</div>
+      <div class="stat-value" id="stat-favs">—</div>
+      <div class="stat-sub">işaretlenmiş</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Kategori</div>
+      <div class="stat-value">6</div>
+      <div class="stat-sub">aktif izleme</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Rapor Saati</div>
+      <div class="stat-value" style="font-size:20px;margin-top:4px;">07:00</div>
+      <div class="stat-sub">her sabah</div>
+    </div>
+  </div>
+
+  <!-- HABERLER -->
+  <div class="section active" id="section-haberler">
+    <div class="categories-grid" id="categories-grid">
+      <!-- JS ile doldurulacak -->
+    </div>
+  </div>
+
+  <!-- KAYNAKLAR -->
+  <div class="section" id="section-kaynaklar">
+    <div id="sources-container"></div>
+  </div>
+
+  <!-- FAVORİLER -->
+  <div class="section" id="section-favoriler">
+    <div id="favorites-container"></div>
+  </div>
+
+  <!-- KURULUM -->
+  <div class="section" id="section-kurulum">
+    <div class="setup-card">
+      <div class="setup-title">⚡ Kurulum Adımları (Cursor AI ile)</div>
+      <div class="step-list">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <div class="step-label">BotFather'dan Telegram botu oluştur</div>
+            <div class="step-desc">Telegram'da <strong>@BotFather</strong>'a git → <code>/newbot</code> → bot adı ver → token al</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <div class="step-label">Chat ID'ni öğren</div>
+            <div class="step-desc"><strong>@userinfobot</strong>'a mesaj gönder veya botu başlat, <code>/start</code> yaz → <strong>@getidsbot</strong> chat ID verir</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <div class="step-label">Perplexity API key al</div>
+            <div class="step-desc"><a href="https://www.perplexity.ai/settings/api" target="_blank" style="color:var(--accent)">perplexity.ai/settings/api</a> → API key oluştur (~$5/ay)</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">4</div>
+          <div class="step-content">
+            <div class="step-label">.env dosyasını doldur</div>
+            <div class="step-desc"><code>.env.example</code>'ı kopyala → <code>.env</code> yap → 3 değeri doldur</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">5</div>
+          <div class="step-content">
+            <div class="step-label">Bağımlılıkları yükle ve başlat</div>
+            <div class="step-desc">Terminal: <code>npm install</code> → <code>npm start</code> → Telegram'dan <code>/start</code> gönder</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">6</div>
+          <div class="step-content">
+            <div class="step-label">Railway'e deploy et (opsiyonel)</div>
+            <div class="step-desc"><a href="https://railway.app" target="_blank" style="color:var(--accent)">railway.app</a> → New Project → GitHub repo bağla → env değişkenlerini ekle → Deploy</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">7</div>
+          <div class="step-content">
+            <div class="step-label">Bu paneli GitHub Pages'e yükle</div>
+            <div class="step-desc">GitHub repo → Settings → Pages → <code>index.html</code>'i root'a koy → Deploy</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="setup-card">
+      <div class="setup-title">📂 Proje Dosya Yapısı</div>
+      <pre style="font-family:var(--font-mono);font-size:12px;color:var(--text2);line-height:1.8;">
+daily-news-bot/
+├── <span style="color:var(--accent)">index.html</span>          ← Bu panel (GitHub Pages)
+├── <span style="color:var(--accent)">.env</span>               ← API anahtarları (git'e ekleme!)
+├── <span style="color:var(--accent)">.env.example</span>       ← Şablon
+├── package.json
+└── bot/
+    ├── <span style="color:var(--accent2)">index.js</span>       ← Ana bot
+    ├── <span style="color:var(--accent2)">scraper.js</span>     ← Perplexity haber toplama
+    ├── <span style="color:var(--accent2)">reporter.js</span>    ← Mesaj formatlama & gönderme
+    ├── <span style="color:var(--accent2)">scheduler.js</span>   ← 07:00 cron job
+    └── <span style="color:var(--accent2)">db.js</span>          ← JSON veritabanı
+      </pre>
+    </div>
+
+    <div class="setup-card">
+      <div class="setup-title">💡 Telegram Komutları</div>
+      <div style="display:grid;gap:8px;">
+        <div style="display:flex;gap:12px;font-size:13px;align-items:center;">
+          <code>/start</code><span style="color:var(--text2)">Botu başlat ve hoşgeldin mesajı al</span>
+        </div>
+        <div style="display:flex;gap:12px;font-size:13px;align-items:center;">
+          <code>/news</code><span style="color:var(--text2)">Anlık haber raporu iste (bekleme olmaksızın)</span>
+        </div>
+        <div style="display:flex;gap:12px;font-size:13px;align-items:center;">
+          <code>/sources</code><span style="color:var(--text2)">Kayıtlı kaynakları kategoriye göre listele</span>
+        </div>
+        <div style="display:flex;gap:12px;font-size:13px;align-items:center;">
+          <code>/favorites</code><span style="color:var(--text2)">Favori olarak işaretlediğin haberleri gör</span>
+        </div>
+        <div style="display:flex;gap:12px;font-size:13px;align-items:center;">
+          <code>/help</code><span style="color:var(--text2)">Yardım ve kategori listesi</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- DELETE MODAL -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal">
+    <div class="modal-title">Kaynağı Sil</div>
+    <div class="modal-desc" id="deleteModalDesc">Bu kaynağı silmek istediğinden emin misin?</div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal()">İptal</button>
+      <button class="btn-danger" onclick="confirmDelete()">Sil</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── DEMO / LOCAL STORAGE DATA ───────────────────────────────────────────────
+
+const CAT_COLORS = {
+  'cam-elyaf': '#3d9df8',
+  'antidamping': '#f85c5c',
+  'ruzgar': '#4ecb6e',
+  'otomotiv': '#f5c842',
+  'ctp-boru': '#f5823a',
+  'firma': '#a0a8b8'
+};
+
+const CATEGORIES = [
+  { id: 'cam-elyaf',   label: 'Cam Elyaf Sektörü',      emoji: '🔵' },
+  { id: 'antidamping', label: 'Vergi & Antidamping',     emoji: '🔴' },
+  { id: 'ruzgar',      label: 'Rüzgar Enerjisi & Elyaf', emoji: '🟢' },
+  { id: 'otomotiv',    label: 'Otomotiv Sektörü',        emoji: '🟡' },
+  { id: 'ctp-boru',    label: 'CTP Boru & Altyapı',      emoji: '🟠' },
+  { id: 'firma',       label: 'Firma Haberleri',          emoji: '⚪' }
+];
+
+// Demo haberler (bot çalışınca bunlar gerçek verilerle güncellenecek)
+const DEMO_NEWS = {
+  'cam-elyaf': {
+    title: 'Küresel Cam Elyaf Pazarı 2025\'te %4.2 Büyüme Kaydetti',
+    summary: 'Composites World raporuna göre küresel cam elyaf talebi, rüzgar enerjisi ve inşaat sektörlerindeki canlanmayla birlikte yıllık bazda artış gösterdi. Asya-Pasifik bölgesi büyümede öncü olmaya devam ediyor.',
+    url: 'https://www.compositesworld.com',
+    source: 'Composites World',
+    date: new Date().toISOString().split('T')[0]
+  },
+  'antidamping': {
+    title: 'AB Çin Menşeli Cam Elyafına Uygulanan Antidamping Soruşturmasını Uzattı',
+    summary: 'Avrupa Birliği, Çin\'den ithal edilen cam elyaf ürünlerine yönelik koruyucu tedbirlerin süresini 5 yıl daha uzattı. Karar, Avrupa üreticilerini koruma amacıyla alındı.',
+    url: 'https://eur-lex.europa.eu',
+    source: 'EUR-Lex',
+    date: new Date().toISOString().split('T')[0]
+  },
+  'ruzgar': {
+    title: 'Saertex Yeni Nesil Rüzgar Kanat Kumaşı Serisini Tanıttı',
+    summary: 'Saertex, kanat ağırlığını %12 azaltan yeni multiaxial cam elyaf serisini duyurdu. Ürün, offshore rüzgar projelerinde kullanım için optimize edildi.',
+    url: 'https://www.saertex.com',
+    source: 'Saertex',
+    date: new Date().toISOString().split('T')[0]
+  },
+  'otomotiv': {
+    title: 'Otomotiv Sektöründe Kompozit Malzeme Kullanımı Artıyor',
+    summary: 'Elektrikli araç üreticileri, ağırlık azaltımı için cam elyaf takviyeli plastik kullanımını hızlandırıyor. 2025 sonu itibarıyla global talebin %8 artması bekleniyor.',
+    url: 'https://www.just-auto.com',
+    source: 'Just-Auto',
+    date: new Date().toISOString().split('T')[0]
+  },
+  'ctp-boru': {
+    title: 'Türkiye\'de GRP Boru Altyapı Yatırımları Hız Kazandı',
+    summary: 'Belediye su altyapısı modernizasyon projeleri kapsamında cam elyaf takviyeli boru (CTP) talepleri artıyor. Güneydoğu Anadolu ve Orta Doğu ihracatı da ivme kazanıyor.',
+    url: 'https://www.reinforcedplastics.com',
+    source: 'Reinforced Plastics',
+    date: new Date().toISOString().split('T')[0]
+  },
+  'firma': {
+    title: 'Amiblu Türkiye Operasyonlarını Genişletiyor',
+    summary: 'Hollandalı GRP boru üreticisi Amiblu, Türkiye pazarındaki büyümesini sürdürmek için yerel distribütör ağını güçlendiriyor. Şirket, bölgesel altyapı projelerine odaklanıyor.',
+    url: 'https://www.amiblu.com',
+    source: 'Amiblu',
+    date: new Date().toISOString().split('T')[0]
+  }
+};
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let pendingDelete = null;
+
+function getStorage(key) {
+  try { return JSON.parse(localStorage.getItem(key)) || []; }
+  catch { return []; }
+}
+
+function setStorage(key, val) {
+  localStorage.setItem(key, JSON.stringify(val));
+}
+
+// ─── TABS ─────────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('section-' + name).classList.add('active');
+  if (name === 'kaynaklar') renderSources();
+  if (name === 'favoriler') renderFavorites();
+}
+
+// ─── LOAD ALL ─────────────────────────────────────────────────────────────────
+function loadAll() {
+  renderCategories();
+  updateStats();
+  document.getElementById('lastUpdate').textContent =
+    'Son güncelleme: ' + new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+}
+
+// ─── CATEGORIES ───────────────────────────────────────────────────────────────
+function renderCategories() {
+  const grid = document.getElementById('categories-grid');
+  grid.innerHTML = CATEGORIES.map(cat => {
+    const news = DEMO_NEWS[cat.id];
+    const color = CAT_COLORS[cat.id];
+    return `
+      <div class="cat-card" style="--cat-color:${color}">
+        <div class="cat-header">
+          <div class="cat-dot"></div>
+          <div class="cat-name">${cat.emoji} ${cat.label}</div>
+          ${news ? `<div class="cat-badge">${news.date}</div>` : ''}
+        </div>
+        ${news ? `
+          <div class="cat-news-title">${news.title}</div>
+          <div class="cat-summary">${news.summary}</div>
+          <div class="cat-meta">
+            ${news.source ? `📌 ${news.source}` : ''}
+            ${news.url ? `<a href="${news.url}" target="_blank" class="cat-link">Habere git →</a>` : ''}
+          </div>
+        ` : `<div class="no-news">Bu kategori için henüz haber yok.</div>`}
+      </div>
+    `;
+  }).join('');
+}
+
+// ─── SOURCES ──────────────────────────────────────────────────────────────────
+function renderSources() {
+  const sources = getStorage('sources');
+  const container = document.getElementById('sources-container');
+
+  if (!sources.length) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📭</div>
+        <div class="empty-title">Henüz kayıtlı kaynak yok</div>
+        <div class="empty-desc">Telegram bot üzerinden haberlere "<strong>📚 Kaynağı Kaydet</strong>" butonuyla kaynak ekleyebilirsin.</div>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="sources-table">
+      <div class="table-header">
+        <div>Başlık</div>
+        <div>Kategori</div>
+        <div>Eklenme</div>
+        <div>Sil</div>
+      </div>
+      ${sources.map((s, i) => `
+        <div class="table-row">
+          <div class="table-title">
+            ${s.url ? `<a href="${s.url}" target="_blank">${s.title || 'Başlıksız'}</a>` : (s.title || 'Başlıksız')}
+          </div>
+          <div class="table-cat">${s.category || '—'}</div>
+          <div class="table-date">${s.addedAt ? new Date(s.addedAt).toLocaleDateString('tr-TR') : '—'}</div>
+          <div><button class="delete-btn" onclick="deleteSource(${i})">Sil</button></div>
+        </div>
+      `).join('')}
+    </div>`;
+}
+
+function deleteSource(idx) {
+  pendingDelete = { type: 'source', idx };
+  const sources = getStorage('sources');
+  document.getElementById('deleteModalDesc').textContent =
+    `"${sources[idx]?.title || 'Bu kaynak'}" silinecek. Emin misin?`;
+  document.getElementById('deleteModal').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('deleteModal').classList.remove('show');
+  pendingDelete = null;
+}
+
+function confirmDelete() {
+  if (!pendingDelete) return;
+  if (pendingDelete.type === 'source') {
+    const sources = getStorage('sources');
+    sources.splice(pendingDelete.idx, 1);
+    setStorage('sources', sources);
+    renderSources();
+    updateStats();
+  }
+  closeModal();
+}
+
+// ─── FAVORITES ────────────────────────────────────────────────────────────────
+function renderFavorites() {
+  const favs = getStorage('favorites');
+  const container = document.getElementById('favorites-container');
+
+  if (!favs.length) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">⭐</div>
+        <div class="empty-title">Henüz favori haber yok</div>
+        <div class="empty-desc">Telegram'dan gelen haber mesajlarındaki "<strong>⭐ Favorilere Ekle</strong>" butonuna basarak favorilere ekleyebilirsin.</div>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="favorites-list">
+      ${[...favs].reverse().map(f => `
+        <div class="fav-card">
+          <div class="fav-star">⭐</div>
+          <div class="fav-content">
+            <div class="fav-cat">${f.category || '—'}</div>
+            <div class="fav-title">${f.title || 'Başlıksız'}</div>
+            <div class="fav-meta">${f.savedAt || '—'}</div>
+          </div>
+          ${f.url ? `<a href="${f.url}" target="_blank" class="fav-link">→ Git</a>` : ''}
+        </div>
+      `).join('')}
+    </div>`;
+}
+
+// ─── STATS ────────────────────────────────────────────────────────────────────
+function updateStats() {
+  document.getElementById('stat-sources').textContent = getStorage('sources').length;
+  document.getElementById('stat-favs').textContent = getStorage('favorites').length;
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+loadAll();
+</script>
+</body>
+</html>
